@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  <title>Voucher: {{ voucher['voucher_id'] }}</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background-color: #f4f6f9;
+      margin: 0;
+      padding: 20px 10px;
+      color: #0C1F3F;
+    }
+
+    .voucher-container {
+      max-width: 600px;
+      margin: auto;
+      border-radius: 16px;
+      background-color: #ffffff;
+      padding: 20px 20px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.06);
+    }
+
+    .voucher-header {
+      text-align: center;
+      margin-bottom: 16px;
+    }
+
+    .voucher-header h2 {
+      font-size: 22px;
+      margin-bottom: 6px;
+    }
+
+    .status-pill {
+      display: inline-block;
+      padding: 5px 12px;
+      border-radius: 20px;
+      color: white;
+      font-weight: bold;
+      font-size: 13px;
+    }
+
+    .pending { background-color: #ff9800; }
+    .redeemed { background-color: #4caf50; }
+
+    .voucher-details div {
+      margin-bottom: 8px;
+      font-size: 15px;
+    }
+
+    .voucher-details strong {
+      display: inline-block;
+      width: 150px;
+    }
+
+    .highlight-yellow {
+      background-color: #fff176;
+      padding: 8px;
+      border-radius: 6px;
+      font-weight: bold;
+    }
+
+    .redeem-section {
+      margin-top: 14px;
+      text-align: center;
+    }
+
+    .redeem-section p {
+      font-weight: bold;
+      font-size: 16px;
+      color: #c62828;
+      margin: 0 0 6px;
+    }
+
+    .redeem-button {
+      background-color: #d32f2f;
+      color: #fff;
+      border: none;
+      padding: 12px 24px;
+      font-size: 16px;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+
+    .redeem-button:hover {
+      background-color: #b71c1c;
+    }
+
+    .instructions {
+      margin-top: 14px;
+      font-size: 15px;
+      padding-left: 20px;
+    }
+
+    .instructions h4 {
+      margin-bottom: 6px;
+      color: #37474f;
+      font-size: 16px;
+    }
+
+    .instructions ol {
+      padding-left: 18px;
+      margin: 0;
+    }
+
+    .instructions li {
+      margin-bottom: 4px;
+    }
+
+    .success-message {
+      color: #4caf50;
+      font-weight: bold;
+      font-size: 16px;
+      margin-top: 10px;
+    }
+
+    .logo-footer {
+      text-align: center;
+      margin-top: 20px;
+    }
+
+    .logo-footer img {
+      width: 110px;
+      opacity: 0.8;
+    }
+
+    .voucher-id {
+      text-align: center;
+      color: #757575;
+      font-size: 14px;
+      margin-top: 6px;
+    }
+  </style>
+</head>
+<body>
+  <div class="voucher-container">
+    <div class="voucher-header">
+      <h2>Official Diesel Voucher</h2>
+      <div>
+        <span class="status-pill {% if voucher['status'] == 'Redeemed' %}redeemed{% else %}pending{% endif %}">
+          {{ voucher['status'] }}
+        </span>
+      </div>
+    </div>
+
+    <div class="voucher-details">
+      <div class="highlight-yellow"><strong>Total PHP Value:</strong> ₱{{ voucher['total_dispensed'] }}</div>
+      <div><strong>Valid Date ONLY:</strong> {{ voucher['expected_refill_date'] }}</div>
+      <div><strong>Driver Name ONLY:</strong> {{ voucher['driver_name'] }}</div>
+      <div><strong>Plate ONLY:</strong> {{ voucher['vehicle_plate'] }}</div>
+      <div><strong>Valid Station ONLY:</strong> {{ voucher['station'] }}</div>
+    </div>
+    <br>
+
+    <div class="redeem-section">
+      {% if voucher['status'] == 'Redeemed' %}
+        <div class="success-message">✅ This voucher has already been redeemed.<br>No further redemptions allowed.</div>
+      {% else %}
+        <p>⬇️ For Pump Attendants: ⬇️</p>
+        <form method="POST">
+          <button class="redeem-button">Click Here to REDEEM</button>
+        </form>
+      {% endif %}
+    </div>
+
+    <br>
+    <div class="instructions">
+      <h4>Instructions:</h4>
+      <ol>
+        <li>Check Driver & Vehicle Details</li>
+        <li>Click the Redeem Button</li>
+        <li>Pump Diesel to the Vehicle</li>
+      </ol>
+    </div>
+    <br>
+
+    <div class="logo-footer">
+      <img src="/static/UniFleet Logo.png" alt="UniFleet Logo">
+    </div>
+
+    <div class="voucher-id">Voucher ID: {{ voucher['voucher_id'] }}</div>
+  </div>
+</body>
+</html>

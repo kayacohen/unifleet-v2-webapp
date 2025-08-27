@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  <meta charset="UTF-8">
+  <style>
+    body {
+      width: 600px;
+      height: 900px;
+      margin: 0;
+      padding: 40px 30px;
+      font-family: Arial, sans-serif;
+      background-color: white;
+      color: #000;
+      box-sizing: border-box;
+    }
+    .header {
+      text-align: center;
+      font-size: 26px;
+      font-weight: bold;
+      margin-bottom: 20px;
+    }
+    .qr {
+      display: flex;
+      justify-content: center;
+      margin: 10px 0 15px 0;
+    }
+    .qr img {
+      width: 300px;
+      height: 300px;
+    }
+    .value-box {
+      background-color: #ffe75a;
+      padding: 10px;
+      text-align: center;
+      font-size: 22px;
+      font-weight: bold;
+      margin: 20px 0;
+    }
+    .info {
+      font-size: 18px;
+      line-height: 1.6;
+    }
+    .instructions {
+      margin-top: 20px;
+      font-size: 16px;
+    }
+    .footer {
+      position: absolute;
+      bottom: 30px;
+      width: 100%;
+      text-align: center;
+      font-size: 14px;
+      color: #555;
+    }
+    .logo {
+      margin-top: 10px;
+      width: 130px;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">Official UniFleet Diesel Voucher</div>
+
+  <div class="qr">
+    <img src="data:image/png;base64,{{ qr_base64 }}">
+  </div>
+
+  <div class="value-box">
+    Total PHP Value: ₱{{ requested_amount_php }}
+  </div>
+
+  <div class="info">
+    Valid Date ONLY: {{ expected_refill_date }}<br>
+    Driver Name ONLY: {{ driver_name }}<br>
+    Plate ONLY: {{ vehicle_plate }}<br>
+    Valid Station ONLY: {{ station }}
+  </div>
+
+  <div class="instructions">
+    <p><strong>Instructions:</strong></p>
+    <ol>
+      <li>Check Driver & Vehicle Details</li>
+      <li>Click the Redeem Button</li>
+      <li>Pump Diesel to the Vehicle</li>
+    </ol>
+  </div>
+
+  <div class="footer">
+    <img src="{{ logo_path }}" class="logo"><br>
+    Voucher ID: {{ voucher_id }}
+  </div>
+</body>
+</html>

@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Registration Complete – UniFleet</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  <style>
+    header {
+      background-color: #e6f0fb;
+      text-align: center;
+      padding: 1rem;
+    }
+
+    header img {
+      height: 40px;
+    }
+
+    .page-title {
+      background-color: white;
+      text-align: center;
+      padding: 1.5rem 1rem 1rem;
+      font-size: 1.8rem;
+      color: #0054a6;
+      font-weight: bold;
+    }
+
+    .centered-content {
+      max-width: 640px;
+      margin: 0 auto;
+      text-align: center;
+      padding: 2rem;
+      background-color: white;
+      border-radius: 8px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+    }
+
+    .account-code {
+      font-size: 2rem;
+      font-weight: bold;
+      color: #ff6600;
+      margin: 1rem 0;
+      letter-spacing: 1px;
+    }
+
+    .button {
+      background-color: #ff6600;
+      color: white;
+      padding: 0.75rem 1.5rem;
+      border: none;
+      border-radius: 4px;
+      text-decoration: none;
+      font-weight: bold;
+      display: inline-block;
+      margin-top: 1.5rem;
+    }
+
+    .button:hover {
+      background-color: #e65500;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <img src="{{ url_for('static', filename='UniFleet Logo.png') }}" alt="UniFleet Logo">
+  </header>
+
+  <div class="page-title">Registration Complete</div>
+
+  <main class="centered-content">
+    <p>Thank you for registering your fleet with UniFleet.</p>
+    <p>Please <strong>save your 4-letter Account Code</strong> below — you'll need this to book fuel:</p>
+
+    <div class="account-code">{{ account_code }}</div>
+
+    <p>Use this code on the booking form to access your presets.</p>
+
+    <a href="/book" class="button">View Discounts & Book Refuel Now</a>
+  </main>
+
+</body>
+</html>

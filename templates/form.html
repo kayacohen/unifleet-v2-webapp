@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <title>Upload CSV – UniFleet</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #f4f4f4;
+            padding: 30px;
+        }
+
+        h1 {
+            color: #004080;
+            margin-bottom: 0.2rem;
+        }
+
+        .subnav {
+            margin-bottom: 1.8rem;
+            font-size: 0.95rem;
+        }
+
+        .subnav a {
+            margin-right: 1.2rem;
+            text-decoration: none;
+            color: #0054a6;
+            font-weight: 600;
+        }
+
+        .subnav a:hover {
+            text-decoration: underline;
+        }
+
+        h2 {
+            color: #333;
+            margin-top: 2rem;
+        }
+
+        .upload-section {
+            max-width: 460px;
+            background: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 30px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        form {
+            margin: 0;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background: #fff;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        th, td {
+            padding: 12px 15px;
+            text-align: left;
+            border-bottom: 1px solid #eee;
+        }
+
+        th {
+            background-color: #004080;
+            color: white;
+        }
+
+        tr:hover {
+            background-color: #f1f1f1;
+        }
+
+        .download-icon {
+            text-decoration: none;
+            font-weight: bold;
+            color: #004080;
+        }
+
+        .download-icon:hover {
+            text-decoration: underline;
+        }
+
+        .delete-button {
+            background-color: #d9534f;
+            color: white;
+            border: none;
+            padding: 6px 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        .delete-button[disabled] {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+
+        td form {
+            display: inline-block;
+            margin: 0;
+            padding: 0;
+            line-height: 1;
+            vertical-align: middle;
+        }
+
+        }
+    </style>
+</head>
+<body>
+
+    <h1>UniFleet Vouchers Dashboard</h1>
+    <div class="subnav">
+        <a href="/register">Register</a>
+        <a href="/book">Book</a>
+        <a href="/export_supplier_csv" class="btn btn-primary" download>Download Supplier CSV</a>
+
+    </div>
+
+    <h2>Upload CSV</h2>
+    <div class="upload-section">
+        <form action="/upload_csv" method="post" enctype="multipart/form-data">
+            <input type="file" name="csv_file" accept=".csv" required>
+            <br><br>
+            <button type="submit">Upload & Generate Vouchers</button>
+        </form>
+    </div>
+
+    <h2>All Vouchers</h2>
+    <input type="text" id="searchInput" onkeyup="filterTable()" placeholder="Search vouchers..." style="margin-bottom: 15px; padding: 8px; width: 100%; max-width: 400px;">
+
+    <table>
+        <thead>
+            <tr>
+                <th>Voucher ID</th>
+                <th>Driver</th>
+                <th>Station</th>
+                <th>Refuel Date</th>
+                <th>Status</th>
+                <th>Total</th>
+                <th>PNG</th>
+                <th>Delete PNGs</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in vouchers %}
+            <tr>
+                <td><a href="/redeem/{{ row['voucher_id'] }}" target="_blank">{{ row['voucher_id'] }}</a></td>
+                <td>{{ row['driver_name'] }}</td>
+                <td>{{ row['station'] }}</td>
+                <td>{{ row['expected_refill_date'] }}</td>
+                <td>{{ row['status'] }}</td>
+                <td>₱{{ row['total_dispensed'] }}</td>
+                <td>
+                    <a class="download-icon" href="/static/qr_codes/{{ row['voucher_id'] }}_Official.png" download>📥</a>
+                </td>
+                <td>
+                    {% if row.png_exists %}
+                        <form method="POST" action="/delete_png/{{ row['voucher_id'] }}" onsubmit="return confirm('Delete both PNGs for {{ row['voucher_id'] }}?');">
+                            <button type="submit" class="delete-button">Delete</button>
+                        </form>
+                    {% else %}
+                        <button class="delete-button" disabled>Deleted</button>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <script>
+        function filterTable() {
+            const input = document.getElementById("searchInput").value.toLowerCase();
+            const rows = document.querySelectorAll("tbody tr");
+
+            rows.forEach(row => {
+                const rowText = row.innerText.toLowerCase();
+                row.style.display = rowText.includes(input) ? "" : "none";
+            });
+        }
+    </script>
+
+</body>
+</html>

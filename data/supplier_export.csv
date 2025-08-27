@@ -1,0 +1,5 @@
+﻿Customer,Invoice,Fuel Product,Driver,Plate,Qty,Status
+UniFleet,UF2025080218252200,Diesel,John Smith,XYZ123,97.47,Redeemed
+UniFleet,UF2025080218252201,Diesel,Randy Ortigas,ABC678,148.22,Redeemed
+UniFleet,UF2025080218320000,Diesel,John Smith,XYZ123,97.47,Unredeemed
+UniFleet,UF2025080218320001,Diesel,Randy Ortigas,ABC678,148.22,Redeemed

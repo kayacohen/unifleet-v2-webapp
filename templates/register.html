@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Register Your Fleet – UniFleet</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  <style>
+    header {
+      background-color: #e6f0fb;
+      text-align: center;
+      padding: 1rem;
+    }
+
+    header img {
+      height: 40px;
+    }
+
+    .page-title {
+      background-color: white;
+      text-align: center;
+      padding: 1.2rem 1rem 0.8rem;
+      font-size: 1.8rem;
+      color: #0054a6;
+      font-weight: bold;
+    }
+
+    .centered-content {
+      max-width: 640px;
+      margin: 0 auto;
+      padding: 2rem 1rem;
+    }
+
+    form label {
+      display: block;
+      margin-top: 1rem;
+      margin-bottom: 0.3rem;
+      font-weight: 500;
+    }
+
+    input[type="text"],
+    input[type="tel"],
+    input[type="email"],
+    input[type="number"],
+    textarea {
+      width: 100%;
+      padding: 0.6rem;
+      font-size: 1rem;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      box-sizing: border-box;
+    }
+
+    textarea {
+      resize: vertical;
+      min-height: 60px;
+    }
+
+    .inline-checkbox {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.5rem;
+      margin: 1rem 0 1.5rem;
+    }
+
+    .inline-checkbox input[type="checkbox"] {
+      margin-top: 0.3rem;
+      transform: scale(1.1);
+    }
+
+    button[type="submit"] {
+      background-color: #ff5c00;
+      color: white;
+      font-weight: bold;
+      padding: 0.8rem 1.5rem;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      margin-top: 1rem;
+    }
+
+    .info-box {
+      background-color: #fff5e6;
+      border-left: 6px solid #ff5c00;
+      padding: 1.2rem 1.2rem 1.2rem 1.5rem;
+      margin-bottom: 2rem;
+      border-radius: 6px;
+      font-size: 0.95rem;
+    }
+
+    .info-box strong {
+      display: block;
+      margin-bottom: 0.6rem;
+      font-size: 1.05rem;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <img src="{{ url_for('static', filename='UniFleet Logo.png') }}" alt="UniFleet Logo">
+  </header>
+
+  <div class="page-title">Register Your Fleet for Discounts</div>
+
+  <main class="centered-content">
+    <section class="info-box">
+      <strong>Save up to ₱1,000 per Diesel re-fuel with the UniFleet fuel discount program!</strong>
+      Sign-up now to receive our Fuel Discount Locator today.<br><br>
+      <strong>How it Works:</strong><br>
+      • Register your fleet & find discounts<br>
+      • Book refuels & pay UniFleet<br>
+      • Redeem pre-paid vouchers at stations for discounts<br><br>
+      <em>Example Voucher:</em> ₱2.00 off per liter for a 200-liter booking
+    </section>
+
+    <form method="POST" action="/register">
+      <label for="contact_name">Contact Person Name</label>
+      <input type="text" name="contact_name" id="contact_name" required>
+
+      <label for="contact_number">Contact Number (Mobile)</label>
+      <input type="tel" name="contact_number" id="contact_number" required>
+
+      <label for="email">Email Address</label>
+      <input type="email" name="email" id="email" required>
+
+      <label for="company_name">Company Name</label>
+      <input type="text" name="company_name" id="company_name" required>
+
+      <label for="fleet_size">Total Number of Diesel Vehicles in Fleet</label>
+      <input type="number" name="fleet_size" id="fleet_size" required>
+
+      <label for="areas">Preferred Areas for Driver Re-Fueling (Select all that apply)</label>
+      <textarea name="areas" id="areas" placeholder="e.g., SLEX, NLEX, Quezon City, Cavite" required></textarea>
+
+      <label for="refuel_locations">Input Address of Current Refuel Locations (Multiple)</label>
+      <textarea name="refuel_locations" id="refuel_locations" required></textarea>
+
+      <label for="hq_locations">Input Fleet Routes (Start & Drop Points)</label>
+      <textarea name="hq_locations" id="hq_locations" required></textarea>
+
+      <div class="inline-checkbox">
+        <input type="checkbox" name="acknowledge" id="acknowledge" required>
+        <label for="acknowledge">I acknowledge that fuel bookings must be done at least 24 hours in advance, otherwise my booking may be cancelled.</label>
+      </div>
+
+      <button type="submit">Register Now & View Discounts</button>
+    </form>
+  </main>
+
+</body>
+</html>

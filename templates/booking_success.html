@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Booking Submitted – UniFleet</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  <style>
+    /* Scoped styles to match book.html look without editing global CSS */
+    header {
+      background-color: #e6f0fb;
+      text-align: center;
+      padding: 1rem;
+    }
+    header img { height: 40px; }
+
+    .page-title {
+      background-color: white;
+      text-align: center;
+      padding: 1.5rem 1rem 1rem;
+      font-size: 1.8rem;
+      color: #0054a6;
+      font-weight: bold;
+    }
+
+    .centered-content {
+      max-width: 640px;
+      margin: 0 auto;
+    }
+
+    .section {
+      background: white;
+      padding: 2rem;
+      border-radius: 8px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+      margin-top: 1.5rem;
+    }
+
+    .success-note {
+      font-size: 1rem;
+      color: #222;
+      margin: 0 0 1rem 0;
+    }
+
+    .payment-instructions { margin-top: 10px; }
+
+    .payment-box {
+      background: #f8f9fa;
+      border: 1px solid #e3e6ea;
+      padding: 14px;
+      margin: 12px 0;
+      border-radius: 10px;
+    }
+    .payment-box h3 {
+      margin: 0 0 8px 0;
+      font-size: 1.05rem;
+      color: #0b3e75;
+    }
+
+    .amount-due {
+      font-size: 1.2rem;
+      font-weight: bold;
+      color: #b00020; /* red for importance */
+      margin: 10px 0 20px 0;
+    }
+
+    .btn-row {
+      display: flex;
+      gap: 10px;
+      margin-top: 18px;
+      flex-wrap: wrap;
+    }
+    .btn, .btn-copy {
+      display: inline-block;
+      padding: 8px 14px;
+      border-radius: 6px;
+      border: none;
+      cursor: pointer;
+      text-decoration: none;
+      font-weight: 600;
+    }
+    .btn-primary {
+      background: #ffcc00;
+      color: #000;
+    }
+    .btn-secondary {
+      background: #1a73e8;
+      color: #fff;
+    }
+    .btn-copy {
+      margin-left: 8px;
+      background: #1a73e8;
+      color: #fff;
+    }
+    .btn-copy:hover { background: #1558b8; }
+
+    .fee-note {
+      margin-top: 12px;
+      font-size: 0.92rem;
+      color: #555;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <img src="{{ url_for('static', filename='UniFleet Logo.png') }}" alt="UniFleet Logo">
+  </header>
+
+  <div class="page-title">Booking Submitted</div>
+
+  <main class="centered-content">
+    <section class="section">
+      <p class="success-note">Your refuel request is now pending payment. Complete the payment below to obtain your refuel voucher. </p>
+
+      <div class="payment-instructions">
+        <h2 style="margin-top:0; color:#0054a6;">Next Step: Send Payment & Forward Confirmation Screenshot to 0945-149-2369</h2>
+        <p class="amount-due">Amount Due: ₱{{ due_amount }}</p>
+
+        <div class="payment-box">
+          <h3>🏦 {{ payment_info.unionbank.label }}</h3>
+          <p><strong>Account Name:</strong> {{ payment_info.unionbank.account_name }}</p>
+          <p>
+            <strong>Account Number:</strong>
+            <span id="union-account">{{ payment_info.unionbank.account_number }}</span>
+          </p>
+          {% if payment_info.unionbank.routing_number %}
+          <p>
+            <strong>Routing Number:</strong>
+            <span id="union-routing">{{ payment_info.unionbank.routing_number }}</span>
+          </p>
+          {% endif %}
+
+        </div>
+
+        <div class="payment-box">
+          <h3>📱 {{ payment_info.gcash.label }}</h3>
+          <p><strong>Account Name:</strong> {{ payment_info.gcash.account_name }}</p>
+          <p>
+            <strong>Number:</strong>
+            <span id="gcash-account">{{ payment_info.gcash.account_number }}</span>
+          </p>
+        </div>
+
+        <p class="fee-note">{{ payment_info.fee_note }}</p>
+      </div>
+
+      <div class="btn-row">
+        <a href="{{ url_for('book') }}" class="btn btn-primary">← Make another booking</a>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    function copyText(elementId) {
+      const el = document.getElementById(elementId);
+      if (!el) return;
+      const text = el.textContent.trim();
+      navigator.clipboard.writeText(text).then(() => {
+        alert("Copied: " + text);
+      });
+    }
+  </script>
+</body>
+</html>

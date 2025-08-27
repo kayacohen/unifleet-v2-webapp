@@ -1,0 +1,5 @@
+﻿timestamp,action,voucher_id,from_status,to_status,route,actor_ip,user_agent,note
+2025-08-27T07:01:16,redeem_denied,UF2025080218320000,unredeemed,Redeemed,/redeem/UF2025080218320000,"45.22.20.98, 10.84.5.65","Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36",enforce_phases=0
+2025-08-27T07:01:50,ops_set_status,UF2025080218320000,unredeemed,Unredeemed,/ops/voucher/UF2025080218320000/status/Unredeemed,"45.22.20.98, 10.84.5.65","Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36",token_ok=1
+2025-08-27T07:02:10,redeem_success,UF2025080218320000,Unredeemed,Redeemed,/redeem/UF2025080218320000,"45.22.20.98, 10.84.0.12","Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36",enforce_phases=0
+2025-08-27T07:02:12,ops_set_status,UF2025080218320000,Redeemed,Unredeemed,/ops/voucher/UF2025080218320000/status/Unredeemed,"45.22.20.98, 10.84.5.65","Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36",token_ok=1

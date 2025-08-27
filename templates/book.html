@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Book a Refuel – UniFleet</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  <style>
+    header {
+      background-color: #e6f0fb;
+      text-align: center;
+      padding: 1rem;
+    }
+
+    header img {
+      height: 40px;
+    }
+
+    .page-title {
+      background-color: white;
+      text-align: center;
+      padding: 1.5rem 1rem 1rem;
+      font-size: 1.8rem;
+      color: #0054a6;
+      font-weight: bold;
+    }
+
+    .centered-content {
+      max-width: 640px;
+      margin: 0 auto;
+    }
+
+    .section {
+      background: white;
+      padding: 2rem;
+      border-radius: 8px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+      margin-top: 1.5rem;
+    }
+
+    .note {
+      font-size: 0.9rem;
+      color: #666;
+      margin-bottom: 1rem;
+    }
+
+    .full-width-input {
+      width: 100%;
+      padding: 0.6rem;
+      font-size: 1rem;
+      margin-top: 0.3rem;
+      margin-bottom: 1rem;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      box-sizing: border-box;
+    }
+
+    label {
+      display: block;
+      margin-top: 1rem;
+    }
+
+    iframe {
+      width: 100%;
+      height: 400px;
+      border: none;
+      border-radius: 8px;
+      margin-top: 1rem;
+    }
+
+    details {
+      background: #f1f7ff;
+      padding: 1rem;
+      border-radius: 6px;
+      margin-top: 0.5rem;
+      margin-bottom: 1rem;
+      font-size: 0.95rem;
+    }
+
+    details summary {
+      font-weight: bold;
+      cursor: pointer;
+      color: #0054a6;
+      margin-bottom: 0.5rem;
+    }
+
+    details p {
+      margin: 0.3rem 0;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <img src="{{ url_for('static', filename='UniFleet Logo.png') }}" alt="UniFleet Logo">
+  </header>
+
+  <div class="page-title">Book a Refuel</div>
+
+  <main class="centered-content">
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <ul class="flashes" style="list-style: none; padding: 0; margin: 1rem 0;">
+          {% for category, message in messages %}
+            <li style="background-color: #ffe0e0; color: #a80000; padding: 1rem; border-radius: 6px; margin-bottom: 1rem; font-weight: bold;">
+              {{ message }}
+            </li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+    {% endwith %}
+
+
+    {% if not customer %}
+    <form method="POST" class="section">
+      <label for="account_code">Enter Your 4-Letter Account Code</label>
+      <input type="text" name="account_code" id="account_code" maxlength="4" class="full-width-input" required>
+      <button type="submit">Continue</button>
+    </form>
+    {% endif %}
+
+    {% if customer %}
+    <form method="POST" class="section">
+      <input type="hidden" name="account_code" value="{{ customer.account_code }}">
+
+      <p><strong>Welcome, {{ customer.company_name }}</strong></p>
+
+      <label for="contact_number">Name & Mobile Number [for Voucher Delivery]</label>
+      <input type="text" name="contact_number" value="{{ customer.contact_name }} – {{ customer.contact_number }}" class="full-width-input" required>
+
+      <label for="station">Select a Station</label>
+      <select name="station" id="station" class="full-width-input" required>
+        {% for name in station_names %}
+          <option value="{{ name }}">{{ name }}</option>
+        {% endfor %}
+      </select>
+
+      <div style="background-color: #e6f0fb; padding: 1.5rem; border-radius: 8px; margin: 1.5rem 0;">
+        <h3 style="margin-top: 0; color: #0054a6;">How to Find Discounts</h3>
+        <ol style="margin-bottom: 1rem; padding-left: 1.5rem;">
+          <li>Find a station on the map below</li>
+          <li>Click to view the discount and max vehicle wheels</li>
+          <li>Select station in drop down</li>
+        </ol>
+        <iframe src="https://www.google.com/maps/d/u/1/embed?mid=1-kTfMqXppZshSnH0n4KyTjsBV9Af_9k&ehbc=2E312F&noprof=1" loading="lazy"></iframe>
+      </div>
+
+      <label for="requested_amount_php">Prepaid Diesel Amount (in PHP) [Discount Applied Later]</label>
+      <input type="number" name="requested_amount_php" class="full-width-input" required
+      value="{{ form_values.requested_amount_php if form_values else '' }}">
+
+      <details>
+        <summary>How Discounts Work</summary>
+        <p>You pay the prepaid amount — and we add a rebate on top based on your selected station’s discount.</p>
+        <p><strong>Example:</strong> You book ₱10,000 at a station with ₱2.50/L discount and a live diesel price of ₱51.30/L.</p>
+        <p>→ That’s ~195 liters (₱10,000 ÷ 51.30)</p>
+        <p>→ Discount = 195L × ₱2.50 = ₱487.50</p>
+        <p><strong>Voucher total:</strong> ₱10,000 + ₱487.50 = ₱10,487.50</p>
+        <p style="margin-top: 0.6rem;">Your driver receives more value — no extra cost to you.</p>
+      </details>
+
+      <label for="refuel_datetime">Refuel Date & Time</label>
+      <input type="datetime-local" name="refuel_datetime" class="full-width-input" required
+      value="{{ form_values.refuel_datetime if form_values else '' }}">
+
+      <hr style="margin: 2rem 0;">
+
+      <h3 style="color: #0054a6;">Driver & Vehicle</h3>
+
+      <label for="driver_mode">Choose Mode</label>
+      <select name="driver_mode" id="driver_mode" class="full-width-input" required>
+        <option value="preset">Use Existing Preset</option>
+        <option value="new">Add New Driver</option>
+      </select>
+
+      <!-- Preset Dropdown -->
+      <div id="preset_fields">
+        <label for="driver_select">Select from Existing Presets</label>
+        <select name="driver_select" id="driver_select" class="full-width-input">
+          {% for row in presets %}
+          <option value="{{ row.driver_name }}|{{ row.vehicle_plate }}|{{ row.truck_make }}|{{ row.truck_model }}|{{ row.number_of_wheels }}|{{ row.fuel_type }}">
+            {{ row.driver_name }} – {{ row.vehicle_plate }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <!-- New Driver Inputs -->
+      <div id="new_driver_fields" style="display: none;">
+        <p class="note">Enter details for new driver and vehicle:</p>
+
+        <label for="driver_name">Driver FULL NAME</label>
+        <input type="text" name="driver_name" class="full-width-input">
+
+        <label for="number_of_wheels">Number of Wheels on Vehicle</label>
+        <input type="number" name="number_of_wheels" class="full-width-input">
+
+        <label for="fuel_type">Fuel Type</label>
+        <input type="text" name="fuel_type" placeholder="e.g. Diesel" value="Diesel" class="full-width-input">
+
+        <label for="truck_make">Vehicle Make</label>
+        <input type="text" name="truck_make" class="full-width-input">
+
+        <label for="truck_model">Vehicle Model</label>
+        <input type="text" name="truck_model" class="full-width-input">
+
+        <label for="vehicle_plate">Plate Number of Vehicle</label>
+        <input type="text" name="vehicle_plate" class="full-width-input">
+      </div>
+
+      <button type="submit">Submit Booking</button>
+    </form>
+    {% endif %}
+
+  </main>
+
+  <script>
+    const modeSelect = document.getElementById('driver_mode');
+    const presetFields = document.getElementById('preset_fields');
+    const newFields = document.getElementById('new_driver_fields');
+
+    function toggleDriverMode() {
+      const mode = modeSelect.value;
+      if (mode === 'preset') {
+        presetFields.style.display = 'block';
+        newFields.style.display = 'none';
+      } else {
+        presetFields.style.display = 'none';
+        newFields.style.display = 'block';
+      }
+    }
+
+    modeSelect.addEventListener('change', toggleDriverMode);
+    window.addEventListener('load', toggleDriverMode); // Initial load
+  </script>
+
+  {% if not presets %}
+    <script>
+      window.addEventListener('load', () => {
+        document.getElementById('driver_mode').value = 'new';
+        toggleDriverMode();
+      });
+    </script>
+  {% endif %}
+
+  
+</body>
+</html>

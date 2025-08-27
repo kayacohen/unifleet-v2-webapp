@@ -1,0 +1,4 @@
+voucher_id,station,requested_amount_php,liters_requested,transaction_date,expected_refill_date,live_price_php_per_liter,discount_per_liter,discount_total,total_dispensed,liters_dispensed,driver_name,vehicle_plate,truck_make,truck_model,number_of_wheels,status,redemption_timestamp
+,Clean Fuel QC,5000,,7/17/25,7/18/25,51.3,2.5,,,,John Smith,XYZ123,Mitsubishi,Montero,10,,
+,Clean Fuel QC,7500,,7/19/25,7/19/25,50.6,2.5,,,,Randy Ortigas,ABC678,Toyota,Tundra,8,,
+,Clean Fuel QC,7000,,7/21/25,7/21/25,53.5,2.5,,,,John Smith,XYZ123,Mitsubishi,Pajero,12,,
