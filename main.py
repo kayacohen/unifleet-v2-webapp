@@ -3,19 +3,30 @@ import os
 import subprocess
 import pandas as pd
 from datetime import date, datetime
+from zoneinfo import ZoneInfo  # <<< ADDED for PH timezone
 import random
 import string
 import csv
 import re
+
+# >>> ADD: admin prices imports
+from flask import jsonify
+import price_store
 
 app = Flask(__name__)
 app.secret_key = 'your_secret_key_here'  # Required for flashing messages
 
 SUPPLIER_API_TOKEN = os.environ.get("SUPPLIER_API_TOKEN", "unifleet2025mvp")  # Default token
 
+# >>> ADD: simple admin key for the prices page
+ADMIN_KEY = os.environ.get("ADMIN_KEY", "unifleet-admin")
+
 UPLOAD_FOLDER = "uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs("data/presets", exist_ok=True)
+
+# >>> ADD: initialize price store JSON on startup (creates data/station_prices.json if missing)
+price_store.init_if_missing()
 
 # ===== Runtime flags / tokens (optional) =====
 ENFORCE_PHASES = os.environ.get("ENFORCE_PHASES", "").strip() == "1"
@@ -67,12 +78,46 @@ def append_audit(action, voucher_id, from_status="", to_status="", note=""):
     except Exception as e:
         print(f"⚠️ Audit log write failed: {e}")
 
+# ===== Price change history (CSV audit) =====
+PRICE_HISTORY_PATH = "data/price_history.csv"
+PRICE_HISTORY_FIELDS = [
+    "timestamp_iso", "timestamp_unix", "station_id",
+    "old_price", "new_price", "actor_ip", "user_agent"
+]
+
+def append_price_history(station_id, old_price, new_price, updated_unix):
+    """Append a price change row; timestamp_iso is logged in Asia/Manila local time."""
+    os.makedirs(os.path.dirname(PRICE_HISTORY_PATH), exist_ok=True)
+    is_new = not os.path.isfile(PRICE_HISTORY_PATH)
+    try:
+        with open(PRICE_HISTORY_PATH, "a", newline="", encoding="utf-8-sig") as f:
+            writer = csv.DictWriter(f, fieldnames=PRICE_HISTORY_FIELDS)
+            if is_new:
+                writer.writeheader()
+            writer.writerow({
+                # <<< CHANGED: force PH time for human-readable column
+                "timestamp_iso": datetime.fromtimestamp(int(updated_unix), tz=ZoneInfo("Asia/Manila")).isoformat(timespec="seconds"),
+                "timestamp_unix": int(updated_unix),
+                "station_id": station_id,
+                "old_price": old_price if old_price is not None else "",
+                "new_price": new_price,
+                "actor_ip": request.headers.get("X-Forwarded-For", request.remote_addr),
+                "user_agent": request.headers.get("User-Agent", ""),
+            })
+    except Exception as e:
+        print(f"⚠️ Price history write failed: {e}")
+
 def _ensure_voucher_columns(df: pd.DataFrame) -> pd.DataFrame:
     if 'status' not in df.columns:
         df['status'] = ""
     if 'redemption_timestamp' not in df.columns:
         df['redemption_timestamp'] = ""
     return df
+
+# >>> ADD: simple admin guard
+def _check_admin_key(req):
+    key = req.args.get("key") or req.headers.get("X-Admin-Key")
+    return key == ADMIN_KEY
 
 @app.route('/')
 def home():
@@ -343,3 +388,56 @@ def export_supplier_csv():
     except Exception as e:
         return f"<h2>Failed to export supplier CSV: {str(e)}</h2>", 500
 
+# =========================
+# Admin: Live Prices (pre-DB)
+# =========================
+@app.route("/admin/prices")
+def admin_prices():
+    if not _check_admin_key(request):
+        return abort(403)
+    stations = price_store.list_stations()
+    stations = sorted(stations, key=lambda s: (s.get("brand",""), s.get("name","")))
+    return render_template("admin_prices.html", stations=stations)
+
+@app.route("/admin/prices/update", methods=["POST"])
+def admin_prices_update():
+    if not _check_admin_key(request):
+        return jsonify({"ok": False, "error": "forbidden"}), 403
+    try:
+        payload = request.get_json(force=True) or {}
+        station_id = str(payload.get("station_id", "")).strip()
+        new_price = float(payload.get("price", 0))
+
+        # capture old price before change
+        before = price_store.get_station(station_id) or {}
+        old_price = before.get("price_php_per_liter")
+
+        # perform update (sets updated_at = epoch seconds)
+        updated = price_store.set_price(station_id, new_price)
+
+        # append a CSV audit row
+        append_price_history(
+            station_id=station_id,
+            old_price=old_price,
+            new_price=updated["price_php_per_liter"],
+            updated_unix=updated["updated_at"]
+        )
+
+        return jsonify({
+            "ok": True,
+            "station_id": station_id,
+            "price_php_per_liter": updated["price_php_per_liter"],
+            "updated_at": updated["updated_at"],
+        })
+    except KeyError as e:
+        return jsonify({"ok": False, "error": str(e)}), 404
+    except ValueError as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+    except Exception:
+        return jsonify({"ok": False, "error": "server_error"}), 500
+
+# Read-only API (handy for previews & step #5)
+@app.route("/api/v1/prices", methods=["GET"])
+def api_prices_list():
+    stations = price_store.list_stations()
+    return jsonify({"stations": stations})

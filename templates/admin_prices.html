@@ -1,0 +1,112 @@
+<!-- templates/admin_prices.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>UniFleet — Admin: Live Prices</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 24px; }
+    h1 { margin-bottom: 12px; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { border: 1px solid #e5e7eb; padding: 8px; text-align: left; }
+    th { background: #f9fafb; font-weight: 600; }
+    tr:hover { background: #fcfcfc; }
+    .price-input { width: 110px; }
+    .btn { cursor: pointer; padding: 6px 10px; border: 1px solid #e5e7eb; border-radius: 6px; background: #111827; color: white; }
+    .btn:disabled { background: #9ca3af; cursor: not-allowed; }
+    .tag { font-size: 12px; padding: 2px 6px; border: 1px solid #e5e7eb; border-radius: 999px; background: #f3f4f6; }
+    .row { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+    #toast { position: fixed; top: 16px; right: 16px; background: #111827; color: #fff; padding: 10px 12px; border-radius: 8px; opacity: 0; transition: opacity .25s; }
+    .muted { color: #6b7280; font-size: 14px; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; }
+  </style>
+</head>
+<body>
+  <h1>Admin — Live Diesel Prices</h1>
+  <div class="row">
+    <span class="tag">Pre-DB JSON store</span>
+    <span class="muted">Edits are saved instantly to <span class="mono">data/station_prices.json</span>.</span>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Brand</th>
+        <th>Station</th>
+        <th>Location</th>
+        <th>Price (PHP/L)</th>
+        <th>Updated</th>
+        <th>Action</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for s in stations %}
+      <tr data-station-id="{{ s.id }}">
+        <td>{{ s.brand }}</td>
+        <td>{{ s.name }}</td>
+        <td>{{ s.location }}</td>
+        <td>
+          <input class="price-input" type="number" step="0.01" min="0.01" max="200"
+                 value="{{ '%.2f'|format(s.price_php_per_liter) }}" />
+        </td>
+        <td class="updated-at">
+          {% if s.updated_at and s.updated_at > 0 %}
+            {{ (s.updated_at * 1000) | datetimeformat if false else s.updated_at }}
+          {% else %}
+            —
+          {% endif %}
+        </td>
+        <td><button class="btn save-btn">Save</button></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <p class="muted" style="margin-top:12px">
+    Tip: Bookmark this page with your <span class="mono">?key=</span> query string for quick access.
+  </p>
+
+  <div id="toast"></div>
+
+  <script>
+    // Simple toast
+    function toast(msg, ok=true) {
+      const el = document.getElementById('toast');
+      el.textContent = msg;
+      el.style.background = ok ? '#111827' : '#b91c1c';
+      el.style.opacity = 1;
+      setTimeout(() => el.style.opacity = 0, 1800);
+    }
+
+    const ADMIN_KEY = new URLSearchParams(location.search).get('key') || '';
+
+    document.querySelectorAll('.save-btn').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        const row = e.target.closest('tr');
+        const stationId = row.getAttribute('data-station-id');
+        const price = parseFloat(row.querySelector('.price-input').value);
+        const updatedCell = row.querySelector('.updated-at');
+
+        btn.disabled = true;
+        try {
+          const res = await fetch('/admin/prices/update?key=' + encodeURIComponent(ADMIN_KEY), {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ station_id: stationId, price })
+          });
+          const data = await res.json();
+          if (!res.ok || !data.ok) throw new Error(data.error || 'Failed');
+          updatedCell.textContent = data.updated_at;
+          toast('Saved ✔');
+        } catch (err) {
+          console.error(err);
+          toast('Save failed: ' + err.message, false);
+        } finally {
+          btn.disabled = false;
+        }
+      });
+    });
+  </script>
+</body>
+</html>
