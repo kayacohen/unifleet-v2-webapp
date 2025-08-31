@@ -1,8 +1,11 @@
 import os
+import time  # <<< ADDED
 from datetime import datetime
 import pandas as pd
 import qrcode
 from PIL import Image, ImageDraw, ImageFont
+
+import price_store  # <<< ADDED: read live prices from station_prices.json
 
 # File paths
 MASTER_VOUCHERS = 'data/master_vouchers.csv'
@@ -20,6 +23,41 @@ REQUIRED_COLUMNS = [
 BASE_URL = "https://c62ded05-595f-42d6-b59c-55cd5cb986e6-00-287s4ts5huint.sisko.replit.dev"
 
 os.makedirs(QR_OUTPUT_DIR, exist_ok=True)
+
+def _norm(s):
+    return str(s or "").strip().lower()
+
+def _resolve_live_price(station_field):
+    """
+    Resolve the station price from station_prices.json by:
+    1) id match (exact)
+    2) name match (case-insensitive)
+    Returns dict with price + updated_at (no freshness gating).
+    """
+    stations = price_store.list_stations()
+    sf = _norm(station_field)
+
+    # id match
+    for s in stations:
+        if _norm(s.get("id")) == sf:
+            return {
+                "price": s.get("price_php_per_liter"),
+                "updated_at": int(s.get("updated_at", 0) or 0),
+                "station_id": s.get("id"),
+                "station_name": s.get("name")
+            }
+
+    # name match
+    for s in stations:
+        if _norm(s.get("name")) == sf:
+            return {
+                "price": s.get("price_php_per_liter"),
+                "updated_at": int(s.get("updated_at", 0) or 0),
+                "station_id": s.get("id"),
+                "station_name": s.get("name")
+            }
+
+    return {"price": None, "updated_at": 0, "station_id": None, "station_name": None}
 
 def generate_qr_image(voucher_data, row_index):
     voucher_id = str(voucher_data['voucher_id']).strip()
@@ -102,8 +140,6 @@ def generate_branded_image(voucher_data):
     except Exception as e:
         print(f"❌ Failed to generate branded image for {voucher_id}: {e}")
 
-
-
 def append_and_generate_vouchers(csv_path):
     df = pd.read_csv(csv_path, encoding='utf-8-sig')
 
@@ -115,40 +151,66 @@ def append_and_generate_vouchers(csv_path):
     df['voucher_id'] = df['voucher_id'].astype(str)
 
     timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+
     for idx, row in df.iterrows():
         voucher_id = str(row['voucher_id']).strip().lower()
         if voucher_id == 'nan' or voucher_id == '':
             df.at[idx, 'voucher_id'] = f"UF{timestamp}{idx:02d}"
 
-        # Fill missing calculations
-        try:
-            if pd.isna(row['liters_requested']) or str(row['liters_requested']).strip() == '':
-                req_amt = float(row['requested_amount_php'])
-                live_price = float(row['live_price_php_per_liter'])
-                df.at[idx, 'liters_requested'] = round(req_amt / live_price, 2)
-        except: pass
+        # Resolve the live price from station_prices.json (always use it if present > 0)
+        station_field = row.get('station', '')
+        lp = _resolve_live_price(station_field)
 
+        # Decide which price to use:
+        # 1) JSON price if present and > 0
+        # 2) fall back to CSV's live_price_php_per_liter (if provided)
+        calc_price = None
         try:
-            if pd.isna(row['discount_total']) or str(row['discount_total']).strip() == '':
-                liters = float(df.at[idx, 'liters_requested'])
-                discount = float(row['discount_per_liter'])
-                df.at[idx, 'discount_total'] = round(liters * discount, 2)
-        except: pass
+            if lp['price'] is not None and float(lp['price']) > 0:
+                calc_price = float(lp['price'])
+                # write back for reproducibility so row is self-contained
+                df.at[idx, 'live_price_php_per_liter'] = round(calc_price, 2)
+            else:
+                calc_price = float(row['live_price_php_per_liter'])
+        except Exception:
+            calc_price = None
 
-        try:
-            if pd.isna(row['total_dispensed']) or str(row['total_dispensed']).strip() == '':
-                total_dispensed = float(df.at[idx, 'requested_amount_php']) + float(df.at[idx, 'discount_total'])
-                df.at[idx, 'total_dispensed'] = round(total_dispensed, 2)
-        except: pass
+        # Fill missing calculations using calc_price (if available)
+        if calc_price is None or calc_price <= 0:
+            print(f"⚠️ No usable price for station '{station_field}' on row {idx}; skipping auto-calcs.")
+        else:
+            try:
+                if pd.isna(row['liters_requested']) or str(row['liters_requested']).strip() == '':
+                    req_amt = float(row['requested_amount_php'])
+                    df.at[idx, 'liters_requested'] = round(req_amt / calc_price, 2)
+            except Exception:
+                pass
 
-        try:
-            if pd.isna(row['liters_dispensed']) or str(row['liters_dispensed']).strip() == '':
-                liters_dispensed = float(df.at[idx, 'liters_requested']) + (
-                    float(df.at[idx, 'discount_total']) / float(df.at[idx, 'live_price_php_per_liter'])
-                )
-                df.at[idx, 'liters_dispensed'] = round(liters_dispensed, 2)
-        except: pass
+            try:
+                if pd.isna(row['discount_total']) or str(row['discount_total']).strip() == '':
+                    liters = float(df.at[idx, 'liters_requested'])
+                    discount = float(row['discount_per_liter'])
+                    df.at[idx, 'discount_total'] = round(liters * discount, 2)
+            except Exception:
+                pass
 
+            try:
+                if pd.isna(row['total_dispensed']) or str(row['total_dispensed']).strip() == '':
+                    total_dispensed = float(df.at[idx, 'requested_amount_php']) + float(df.at[idx, 'discount_total'])
+                    df.at[idx, 'total_dispensed'] = round(total_dispensed, 2)
+            except Exception:
+                pass
+
+            try:
+                if pd.isna(row['liters_dispensed']) or str(row['liters_dispensed']).strip() == '':
+                    liters_dispensed = float(df.at[idx, 'liters_requested']) + (
+                        float(df.at[idx, 'discount_total']) / calc_price
+                    )
+                    df.at[idx, 'liters_dispensed'] = round(liters_dispensed, 2)
+            except Exception:
+                pass
+
+        # Keep your existing default exactly as-is
         if pd.isna(row['status']) or str(row['status']).strip() == '':
             df.at[idx, 'status'] = 'unredeemed'
 

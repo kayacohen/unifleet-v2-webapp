@@ -441,3 +441,76 @@ def admin_prices_update():
 def api_prices_list():
     stations = price_store.list_stations()
     return jsonify({"stations": stations})
+
+# =========================
+# Price Preview API (always uses stored price; flags stale)
+# =========================
+@app.route("/api/v1/price_preview", methods=["GET"])  # [1]
+def api_price_preview():  # [2]
+    """
+    Query params:  # [3]
+      - station: station id OR station name (exact match)  # [4]
+      - amount: PHP amount (float)  # [5]
+      - discount_per_liter: optional, default 0 (float)  # [6]
+    """  # [7]
+    station_q = (request.args.get("station") or "").strip()  # [8]
+    try:  # [9]
+        amount = float(request.args.get("amount", "0"))  # [10]
+    except ValueError:  # [11]
+        return jsonify({"ok": False, "error": "invalid amount"}), 400  # [12]
+    try:  # [13]
+        dpl = float(request.args.get("discount_per_liter", "0") or 0)  # [14]
+    except ValueError:  # [15]
+        dpl = 0.0  # [16]
+
+    # Resolve station by id, then by name (case-insensitive)  # [17]
+    def _norm(s): return str(s or "").strip().lower()  # [18]
+    stations = price_store.list_stations()  # [19]
+    match = None  # [20]
+    for s in stations:  # [21]
+        if _norm(s.get("id")) == _norm(station_q):  # [22]
+            match = s; break  # [23]
+    if match is None:  # [24]
+        for s in stations:  # [25]
+            if _norm(s.get("name")) == _norm(station_q):  # [26]
+                match = s; break  # [27]
+    if match is None:  # [28]
+        return jsonify({"ok": False, "error": "station not found"}), 404  # [29]
+
+    # Always use stored price; compute a simple "stale" flag (>= 7 days)  # [30]
+    try:  # [31]
+        price = float(match.get("price_php_per_liter") or 0)  # [32]
+    except Exception:  # [33]
+        price = 0.0  # [34]
+    ts = int(match.get("updated_at", 0) or 0)  # [35]
+
+    if amount <= 0 or price <= 0:  # [36]
+        return jsonify({"ok": False, "error": "invalid amount or price"}), 400  # [37]
+
+    liters_requested = round(amount / price, 2)  # [38]
+    discount_total = round(liters_requested * dpl, 2)  # [39]
+    total_dispensed = round(amount + discount_total, 2)  # [40]
+    liters_dispensed = round(liters_requested + (discount_total / price if price else 0), 2)  # [41]
+
+    # Informational stale flag (no blocking)  # [42]
+    is_stale = False  # [43]
+    if ts <= 0:  # [44]
+        is_stale = True  # [45]
+    else:  # [46]
+        now = int(datetime.now().timestamp())  # [47]
+        is_stale = (now - ts) >= 7 * 24 * 60 * 60  # [48]
+
+    return jsonify({  # [49]
+        "ok": True,  # [50]
+        "station_id": match.get("id"),  # [51]
+        "station_name": match.get("name"),  # [52]
+        "price_php_per_liter": price,  # [53]
+        "price_updated_at": ts,  # [54]
+        "price_is_stale": is_stale,  # [55]
+        "requested_amount_php": amount,  # [56]
+        "discount_per_liter": dpl,  # [57]
+        "liters_requested": liters_requested,  # [58]
+        "discount_total": discount_total,  # [59]
+        "total_dispensed": total_dispensed,  # [60]
+        "liters_dispensed": liters_dispensed  # [61]
+    })  # [62]

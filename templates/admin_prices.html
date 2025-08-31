@@ -20,6 +20,20 @@
     #toast { position: fixed; top: 16px; right: 16px; background: #111827; color: #fff; padding: 10px 12px; border-radius: 8px; opacity: 0; transition: opacity .25s; }
     .muted { color: #6b7280; font-size: 14px; }
     .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; }
+
+    /* NEW: stale indicators */
+    .badge-stale {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 9999px;
+      font-size: 12px;
+      background: #FEE2E2; /* red-100 */
+      color: #991B1B;      /* red-800 */
+      margin-left: 8px;
+    }
+    .stale-row {
+      background: #FFF7ED;  /* amber-50 */
+    }
   </style>
 </head>
 <body>
@@ -81,6 +95,50 @@
 
     const ADMIN_KEY = new URLSearchParams(location.search).get('key') || '';
 
+    // --- NEW: stale marking helpers ---
+    const STALE_DAYS = 7;
+    const NOW_SECS = () => Date.now() / 1000;
+
+    function clearStale(row, cell) {
+      if (row) row.classList.remove('stale-row');
+      if (cell) {
+        const badge = cell.querySelector('.badge-stale');
+        if (badge) badge.remove();
+      }
+    }
+
+    function markRowStaleIfNeeded(row) {
+      const cell = row.querySelector('.updated-at');
+      if (!cell) return;
+      const raw = (cell.textContent || '').trim();
+      const epoch = Number(raw);
+      clearStale(row, cell);
+
+      // Never updated (—) or invalid -> stale
+      if (!Number.isFinite(epoch) || epoch <= 0) {
+        addStale(cell, row, 'Never updated');
+        return;
+      }
+
+      const ageDays = (NOW_SECS() - epoch) / 86400;
+      if (ageDays >= STALE_DAYS) {
+        addStale(cell, row, `${Math.floor(ageDays)}d old`);
+      }
+    }
+
+    function addStale(cell, row, titleText) {
+      if (row) row.classList.add('stale-row');
+      const badge = document.createElement('span');
+      badge.className = 'badge-stale';
+      badge.textContent = 'STALE';
+      if (titleText) badge.title = titleText;
+      cell.appendChild(badge);
+    }
+
+    // Initial pass on load
+    document.querySelectorAll('tbody tr').forEach(markRowStaleIfNeeded);
+
+    // Save handler
     document.querySelectorAll('.save-btn').forEach(btn => {
       btn.addEventListener('click', async (e) => {
         const row = e.target.closest('tr');
@@ -97,7 +155,13 @@
           });
           const data = await res.json();
           if (!res.ok || !data.ok) throw new Error(data.error || 'Failed');
+
+          // Update epoch seconds in the cell
           updatedCell.textContent = data.updated_at;
+
+          // Re-evaluate stale state for this row
+          markRowStaleIfNeeded(row);
+
           toast('Saved ✔');
         } catch (err) {
           console.error(err);
