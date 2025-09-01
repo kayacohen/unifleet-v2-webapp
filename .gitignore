@@ -159,3 +159,29 @@ cython_debug/
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/.git-credentials
 .git-credentials
+
+
+# === UniFleet runtime files (ignore logs, audit, backups) ===
+
+# Voucher / audit CSVs
+data/*_history.csv
+data/ops_audit_log.csv
+data/unifleet_web_redemptions_input.csv
+data/requested_vouchers.csv
+data/supplier_export.csv
+
+# Presets (driver/customer specific, not source-controlled)
+data/presets/*.csv
+
+# Runtime JSON (discount store, backups, etc.)
+data/discount_store.json
+data/discount_history.csv
+data/station_prices.json.bak
+
+# Local DBs
+data/*.db
+
+# Allowlist (keep these versioned)
+!data/stations.csv
+!data/customers.csv
+!data/station_prices.json
