@@ -1,83 +1,83 @@
 {
   "stations": [
     {
-      "id": "cleanfuel_valenzuela",
-      "brand": "Cleanfuel",
-      "name": "Cleanfuel – Valenzuela",
-      "location": "NLEX Southbound",
-      "price_php_per_liter": 63.0,
-      "updated_at": 1756655102
-    },
-    {
-      "id": "unioil_mandaluyong",
-      "brand": "Unioil",
-      "name": "Unioil – Mandaluyong",
-      "location": "EDSA",
-      "price_php_per_liter": 59.1,
-      "updated_at": 0
-    },
-    {
-      "id": "seaoil_bicutan",
-      "brand": "Seaoil",
-      "name": "Seaoil – Bicutan",
-      "location": "SLEX Northbound",
-      "price_php_per_liter": 58.9,
+      "id": "ecooil_edsa_mandaluyong",
+      "brand": "EcoOil",
+      "name": "EcoOil - EDSA Mandaluyong",
+      "location": "EDSA Mandaluyong",
+      "price_php_per_liter": 0.0,
       "updated_at": 0
     },
     {
       "id": "ecooil_qc",
       "brand": "EcoOil",
-      "name": "EcoOil – QC",
-      "location": "Commonwealth",
-      "price_php_per_liter": 58.3,
+      "name": "EcoOil - QC",
+      "location": "QC",
+      "price_php_per_liter": 0.0,
       "updated_at": 0
     },
     {
-      "id": "maximumfuel_val",
-      "brand": "Maximum Fuel",
-      "name": "Maximum Fuel – Valenzuela",
-      "location": "Punturin",
-      "price_php_per_liter": 57.95,
+      "id": "ecooil_pasay",
+      "brand": "EcoOil",
+      "name": "EcoOil - Pasay",
+      "location": "Pasay",
+      "price_php_per_liter": 0.0,
       "updated_at": 0
     },
     {
-      "id": "phoenix_meyc",
-      "brand": "Phoenix",
-      "name": "Phoenix – Meycauayan",
-      "location": "NLEX",
-      "price_php_per_liter": 58.2,
-      "updated_at": 0
-    },
-    {
-      "id": "petro_gsanj",
-      "brand": "Petro G",
-      "name": "Petro G – San Jose",
+      "id": "ecooil_bulacan",
+      "brand": "EcoOil",
+      "name": "EcoOil - Bulacan",
       "location": "Bulacan",
-      "price_php_per_liter": 58.0,
+      "price_php_per_liter": 0.0,
       "updated_at": 0
     },
     {
-      "id": "gazz_binan",
-      "brand": "Gazz",
-      "name": "Gazz – Biñan",
-      "location": "SLEX Southbound",
-      "price_php_per_liter": 57.8,
+      "id": "ecooil_pampanga",
+      "brand": "EcoOil",
+      "name": "EcoOil - Pampanga",
+      "location": "Pampanga",
+      "price_php_per_liter": 0.0,
       "updated_at": 0
     },
     {
-      "id": "filoil_stamesa",
-      "brand": "FilOil",
-      "name": "FilOil – Sta. Mesa",
-      "location": "Manila",
-      "price_php_per_liter": 59.4,
+      "id": "ecooil_marikina",
+      "brand": "EcoOil",
+      "name": "EcoOil - Marikina",
+      "location": "Marikina",
+      "price_php_per_liter": 0.0,
       "updated_at": 0
     },
     {
-      "id": "petron_port",
-      "brand": "Petron",
-      "name": "Petron – Port Area",
-      "location": "Port of Manila",
-      "price_php_per_liter": 59.9,
+      "id": "ecooil_rizal",
+      "brand": "EcoOil",
+      "name": "EcoOil - Rizal",
+      "location": "Rizal",
+      "price_php_per_liter": 0.0,
+      "updated_at": 0
+    },
+    {
+      "id": "ecooil_silang",
+      "brand": "EcoOil",
+      "name": "EcoOil - Silang",
+      "location": "Silang",
+      "price_php_per_liter": 0.0,
+      "updated_at": 0
+    },
+    {
+      "id": "ecooil_calamba",
+      "brand": "EcoOil",
+      "name": "EcoOil - Calamba",
+      "location": "Calamba",
+      "price_php_per_liter": 0.0,
+      "updated_at": 0
+    },
+    {
+      "id": "ecooil_cabuyao",
+      "brand": "EcoOil",
+      "name": "EcoOil - Cabuyao",
+      "location": "Cabuyao",
+      "price_php_per_liter": 0.0,
       "updated_at": 0
     }
   ]

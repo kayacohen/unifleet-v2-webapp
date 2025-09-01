@@ -11,6 +11,10 @@ import re
 
 import price_store
 from persistence import get_repo  # repo abstraction (CSV or DB)
+from generate_voucher import generate_assets_for_row  # approval-time asset generation
+
+# NEW: discounts storage
+from discount_store import DiscountStore, DiscountValueError
 
 app = Flask(__name__)
 app.secret_key = 'your_secret_key_here'  # Required for flashing messages
@@ -192,11 +196,21 @@ def ops_set_status(voucher_id, new_status):
     if not row:
         return f"<h2>Voucher ID '{voucher_id}' not found.</h2>", 404
     prev = str(row.get('status','')).strip()
+
     if new_status == 'Redeemed':
         ts = datetime.now().isoformat(timespec='seconds')
         repo.set_status(voucher_id, 'Redeemed', ts)
+    elif new_status == 'Unredeemed':
+        # Approval step: first generate assets, then mark approved
+        try:
+            generate_assets_for_row(row)
+        except Exception as gen_err:
+            append_audit("ops_generate_assets_error", voucher_id, prev, new_status, str(gen_err))
+            return f"<h2>Failed to generate voucher assets: {gen_err}</h2>", 500
+        repo.set_status(voucher_id, 'Unredeemed', "")
     else:
         repo.set_status(voucher_id, new_status, "")
+
     append_audit("ops_set_status", voucher_id, prev, new_status, f"token_ok={int(bool(not OPS_TOKEN or request.args.get('token','')==OPS_TOKEN))}")
     return redirect(f"/redeem/{voucher_id}")
 
@@ -371,13 +385,18 @@ def export_supplier_csv():
 # =========================
 # Admin: Live Prices (pre-DB)
 # =========================
+# NEW: instantiate discount store (JSON + CSV audit already created earlier)
+discount_store = DiscountStore()
+
 @app.route("/admin/prices")
 def admin_prices():
     if not _check_admin_key(request):
         return abort(403)
     stations = price_store.list_stations()
     stations = sorted(stations, key=lambda s: (s.get("brand",""), s.get("name","")))
-    return render_template("admin_prices.html", stations=stations)
+    # NEW: pass discounts for the template badge/input defaults
+    discounts = discount_store.get_all()
+    return render_template("admin_prices.html", stations=stations, discounts=discounts)
 
 @app.route("/admin/prices/update", methods=["POST"])
 def admin_prices_update():
@@ -418,6 +437,74 @@ def admin_prices_update():
 def api_prices_list():
     stations = price_store.list_stations()
     return jsonify({"stations": stations})
+
+# =========================
+# Discounts (NEW for #6a)
+# =========================
+@app.route("/admin/discounts/update", methods=["POST"])
+def admin_discounts_update():
+    """
+    HTML form POST from /admin/prices Discount column.
+
+    Behavior:
+      - Requires admin key (?key=...)
+      - Blank input => do nothing (flash + redirect)
+      - Range: 0.00 <= value <= 15.00
+      - Writes to discount_store (JSON + CSV audit)
+      - Always redirect back to /admin/prices?key=...
+    """
+    if not _check_admin_key(request):
+        return abort(403)
+
+    key = request.args.get("key", "").strip()
+    station = (request.form.get("station") or "").strip()
+    raw_value = (request.form.get("discount_per_liter") or "").strip()
+
+    def _back():
+        # preserve ?key=
+        target = url_for("admin_prices")
+        if key:
+            target = f"{target}?key={key}"
+        return redirect(target)
+
+    if not station:
+        flash("Station is required.", "error")
+        return _back()
+
+    # Blank means NO-OP
+    if raw_value == "":
+        flash(f"No changes saved for “{station}”.", "info")
+        return _back()
+
+    # Parse + validate
+    try:
+        value = float(raw_value)
+    except ValueError:
+        flash("Discount must be a number.", "error")
+        return _back()
+
+    if value < 0 or value > 15:
+        flash("Discount must be between 0 and 15 PHP/L.", "error")
+        return _back()
+
+    try:
+        # Write; okay if same=>same (keeps audit consistent)
+        discount_store.set(station, value, actor="admin", reason="manual update")
+        flash(f"Saved discount {value:.2f} PHP/L for “{station}”.", "success")
+    except DiscountValueError as e:
+        flash(str(e), "error")
+    except Exception as e:
+        flash(f"Failed to save discount: {e}", "error")
+
+    return _back()
+
+@app.route("/api/v1/discounts", methods=["GET"])
+def api_discounts_list():
+    """Optional read API for current discounts."""
+    try:
+        return jsonify({"discounts": discount_store.get_all()})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 # =========================
 # Price Preview API (always uses stored price; flags stale)
