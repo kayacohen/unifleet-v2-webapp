@@ -98,6 +98,20 @@
             cursor: not-allowed;
         }
 
+        .verify-button {
+            background-color: #28a745;
+            color: white;
+            border: none;
+            padding: 6px 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            text-decoration: none;
+        }
+        .verify-button:hover {
+            filter: brightness(0.95);
+        }
+
         td form {
             display: inline-block;
             margin: 0;
@@ -139,19 +153,39 @@
                 <th>Station</th>
                 <th>Refuel Date</th>
                 <th>Status</th>
+                <th>Verify</th>
                 <th>Total</th>
                 <th>PNG</th>
                 <th>Delete PNGs</th>
             </tr>
         </thead>
+
         <tbody>
             {% for row in vouchers %}
             <tr>
                 <td><a href="/redeem/{{ row['voucher_id'] }}" target="_blank">{{ row['voucher_id'] }}</a></td>
                 <td>{{ row['driver_name'] }}</td>
                 <td>{{ row['station'] }}</td>
-                <td>{{ row['expected_refill_date'] | manila_time }}</td>
+                <td>
+                  {% set ts = row.get('refuel_datetime') or row.get('expected_refill_date') or row.get('transaction_date') %}
+                  {{ ts|manila_time }}
+                </td>
                 <td>{{ row['status'] }}</td>
+
+                <!-- NEW: Verify action -->
+                <td>
+                    {% if row['status'] == 'Unverified' %}
+                        <a
+                          class="verify-button"
+                          href="/ops/voucher/{{ row['voucher_id'] }}/status/Unredeemed?next={{ url_for('form') }}{% if ops_token %}&token={{ ops_token }}{% endif %}">
+                          Verify
+                        </a>
+
+                    {% else %}
+                        <span style="color:#777;">—</span>
+                    {% endif %}
+                </td>
+
                 <td>₱{{ row['total_dispensed'] }}</td>
                 <td>
                     <a class="download-icon" href="/static/qr_codes/{{ row['voucher_id'] }}_Official.png" download>📥</a>
@@ -166,6 +200,7 @@
                     {% endif %}
                 </td>
             </tr>
+
             {% endfor %}
         </tbody>
     </table>

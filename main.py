@@ -20,20 +20,52 @@ from discount_store import DiscountStore, DiscountValueError
 
 app = Flask(__name__)
 
-@app.template_filter('manila_time')
+@app.template_filter("manila_time")
 def manila_time_filter(value):
     """
-    Convert ISO-like string to Asia/Manila time and format.
+    Render a date/time value as Asia/Manila local time in 'YYYY-MM-DD HH:MM'.
+    Rules:
+      - If an ISO string has NO timezone (naive), treat it as Manila local.
+      - If an ISO string HAS a timezone/offset, convert to Manila.
+      - If it's a legacy short date like '7/19/25', show as-is.
     """
-    if not value or (isinstance(value, float) and pd.isna(value)):
-        return ""
+    if not value:
+        return "—"
+
+    s = str(value).strip()
+
+    # Legacy short dates like '7/19/25' -> don't try to convert
+    if "/" in s and len(s) <= 10:
+        return s
+
+    manila = pytz.timezone("Asia/Manila")
+
+    # Try ISO first
     try:
-        dt = datetime.fromisoformat(str(value))
+        # fromisoformat handles 'YYYY-MM-DD', 'YYYY-MM-DDTHH:MM[:SS][.ffffff][+/-HH:MM]'
+        dt = datetime.fromisoformat(s)
+        if dt.tzinfo is None:
+            # Treat browser-sent naive datetime as already in Manila local time
+            dt = manila.localize(dt)
+        else:
+            # Convert any aware datetime to Manila
+            dt = dt.astimezone(manila)
+        return dt.strftime("%Y-%m-%d %H:%M")
     except Exception:
-        return value  # fallback: show raw string
-    utc = pytz.utc.localize(dt)
-    manila = utc.astimezone(pytz.timezone("Asia/Manila"))
-    return manila.strftime("%b %d, %Y %I:%M %p")
+        pass
+
+    # Try generic pandas/strptime parsing as last resort
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d", "%m/%d/%Y", "%m/%d/%y"):
+        try:
+            dt = datetime.strptime(s, fmt)
+            # Treat parsed naive values as Manila local too
+            dt = manila.localize(dt)
+            return dt.strftime("%Y-%m-%d %H:%M")
+        except Exception:
+            continue
+
+    # Fallback: show raw string if nothing matched
+    return s
 
 app.secret_key = 'your_secret_key_here'  # Required for flashing messages
 
@@ -155,7 +187,8 @@ def form():
     except Exception as e:
         print(f"⚠️ Error loading vouchers: {e}")
         vouchers = []
-    return render_template("form.html", today=date.today().isoformat(), vouchers=vouchers)
+    return render_template("form.html", today=date.today().isoformat(), vouchers=vouchers, ops_token=OPS_TOKEN)
+
 
 @app.route('/upload_csv', methods=['POST'])
 def upload_csv():
@@ -230,7 +263,10 @@ def ops_set_status(voucher_id, new_status):
         repo.set_status(voucher_id, new_status, "")
 
     append_audit("ops_set_status", voucher_id, prev, new_status, f"token_ok={int(bool(not OPS_TOKEN or request.args.get('token','')==OPS_TOKEN))}")
-    return redirect(f"/redeem/{voucher_id}")
+
+    # Redirect back to caller, defaulting to /form
+    next_url = request.args.get("next") or request.referrer or url_for("form")
+    return redirect(next_url)
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
