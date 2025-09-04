@@ -150,7 +150,7 @@
                 <td><a href="/redeem/{{ row['voucher_id'] }}" target="_blank">{{ row['voucher_id'] }}</a></td>
                 <td>{{ row['driver_name'] }}</td>
                 <td>{{ row['station'] }}</td>
-                <td>{{ row['expected_refill_date'] }}</td>
+                <td>{{ row['expected_refill_date'] | manila_time }}</td>
                 <td>{{ row['status'] }}</td>
                 <td>₱{{ row['total_dispensed'] }}</td>
                 <td>

@@ -8,6 +8,8 @@ import random
 import string
 import csv
 import re
+import pytz
+
 
 import price_store
 from persistence import get_repo  # repo abstraction (CSV or DB)
@@ -17,6 +19,22 @@ from generate_voucher import generate_assets_for_row  # approval-time asset gene
 from discount_store import DiscountStore, DiscountValueError
 
 app = Flask(__name__)
+
+@app.template_filter('manila_time')
+def manila_time_filter(value):
+    """
+    Convert ISO-like string to Asia/Manila time and format.
+    """
+    if not value or (isinstance(value, float) and pd.isna(value)):
+        return ""
+    try:
+        dt = datetime.fromisoformat(str(value))
+    except Exception:
+        return value  # fallback: show raw string
+    utc = pytz.utc.localize(dt)
+    manila = utc.astimezone(pytz.timezone("Asia/Manila"))
+    return manila.strftime("%b %d, %Y %I:%M %p")
+
 app.secret_key = 'your_secret_key_here'  # Required for flashing messages
 
 SUPPLIER_API_TOKEN = os.environ.get("SUPPLIER_API_TOKEN", "unifleet2025mvp")  # Default token
@@ -318,6 +336,16 @@ def book():
             'contact_name': request.form.get('contact_number').split('–')[0].strip(),
             'contact_number': request.form.get('contact_number').split('–')[-1].strip()
         }
+
+        # === SAVE BOOKING (CSV mode writes to data/master_vouchers.csv) ===
+        try:
+            created = repo.create_unverified_booking(row)
+            # Optional: log the voucher ID for sanity checks
+            print("[BOOK] created voucher:", created.get("voucher_id"))
+        except Exception as e:
+            print("⚠️ Failed to create Unverified booking:", e)
+
+        
         preset_path = f"data/presets/{account_code}_presets.csv"
         existing = pd.read_csv(preset_path, encoding='utf-8-sig') if os.path.isfile(preset_path) else pd.DataFrame()
         if driver_data['vehicle_plate'] not in existing.get('vehicle_plate', []):
