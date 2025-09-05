@@ -1,45 +1,36 @@
 # models.py
 
 VOUCHER_COLUMNS = [
-    # identifiers
     "voucher_id",
-
-    # booking data
     "station",
     "requested_amount_php",
     "liters_requested",
     "transaction_date",
     "expected_refill_date",
-
-    # legacy live-price fields (kept for backward compatibility)
     "live_price_php_per_liter",
     "discount_per_liter",
     "discount_total",
     "total_dispensed",
     "liters_dispensed",
-
-    # driver/vehicle
     "driver_name",
     "vehicle_plate",
     "truck_make",
     "truck_model",
     "number_of_wheels",
-
-    # status + redemption
     "status",
     "redemption_timestamp",
 
-    # audit timestamps (UTC; displayed as Manila via template filter)
+    # --- NEW (booking + audit timestamps) ---
     "created_at",
     "updated_at",
 
-    # ---- NEW: booking-time snapshot fields (source-of-truth at Verify) ----
+    # --- NEW (booking-time snapshots we’ll freeze in main.py) ---
     "price_snapshot_php_per_liter",
     "price_snapshot_updated_at",
     "discount_snapshot_php_per_liter",
     "discount_snapshot_captured_at",
 
-    # ---- NEW: computed-at-Verify fields (used in PNG math) ----
+    # (these may already exist in your project; keep them if present)
     "discount_total_php",
     "total_dispensed_php",
     "computed_at",
