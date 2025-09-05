@@ -34,8 +34,10 @@ class CSVRepo:
         for c in VOUCHER_COLUMNS:
             if c not in df.columns:
                 df[c] = ""
-        # keep column order consistent
-        return df[VOUCHER_COLUMNS] if all(c in df.columns for c in VOUCHER_COLUMNS) else df
+        # Preserve extra columns (e.g., computed_at, *_php). Reorder known columns to the front.
+        known = [c for c in VOUCHER_COLUMNS if c in df.columns]
+        others = [c for c in df.columns if c not in known]
+        return df[known + others]
 
     def _read(self) -> pd.DataFrame:
         if not os.path.exists(MASTER_CSV):
@@ -105,6 +107,49 @@ class CSVRepo:
                 add_df[c] = ""
         add_df = add_df[VOUCHER_COLUMNS]
         df = pd.concat([df, add_df], ignore_index=True)
+        self._write(df)
+
+    def update_voucher_fields(self, voucher_id: str, fields: Dict):
+        """
+        Update arbitrary columns for a voucher in the CSV.
+        - Ensures any missing columns in `fields` are added to the CSV.
+        - Bumps updated_at if that column exists.
+        - Mirrors *_php -> legacy columns when present for compatibility.
+        """
+        # Load
+        df = self._read()
+        if df.empty or 'voucher_id' not in df.columns:
+            raise KeyError("voucher not found")
+
+        # Normalize types for matching
+        df['voucher_id'] = df['voucher_id'].astype(str)
+        voucher_id = str(voucher_id)
+        mask = df['voucher_id'] == voucher_id
+        if not mask.any():
+            raise KeyError(f"voucher not found: {voucher_id}")
+
+        # Ensure all target columns exist
+        for col in fields.keys():
+            if col not in df.columns:
+                df[col] = ""
+
+        # Write all provided fields
+        for k, v in (fields or {}).items():
+            df.loc[mask, k] = v
+
+        # Compatibility mirrors
+        if 'discount_total_php' in fields and 'discount_total' in df.columns:
+            df.loc[mask, 'discount_total'] = fields['discount_total_php']
+        if 'total_dispensed_php' in fields and 'total_dispensed' in df.columns:
+            df.loc[mask, 'total_dispensed'] = fields['total_dispensed_php']
+
+        # Bump updated_at (ensure column exists)
+        if 'updated_at' not in df.columns:
+            df['updated_at'] = ""
+        from datetime import datetime
+        df.loc[mask, 'updated_at'] = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+
+        # Save
         self._write(df)
 
     # NEW: used by /book in main.py
