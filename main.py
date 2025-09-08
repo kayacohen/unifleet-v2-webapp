@@ -358,20 +358,102 @@ def book():
                 'number_of_wheels': parts[4],
                 'fuel_type': parts[5]
             }
+        
+        # ---- CAPTURE BOOKING-TIME SNAPSHOTS (price & discount) ----
+        station_name = (request.form.get('station') or '').strip()
+
+        # Robust normalizers: fix em/en dashes → '-', strip, lowercase, and slugify
+        import re as _re
+        def _norm_dashes(s: str) -> str:
+            s = str(s or '')
+            return s.replace('—', '-').replace('–', '-').strip().lower()
+
+        def _slug(s: str) -> str:
+            s = _norm_dashes(s)
+            s = _re.sub(r'[^a-z0-9\s-]', '', s)      # keep letters/digits/space/hyphen
+            s = _re.sub(r'[\s-]+', '_', s)           # collapse to underscores
+            return s.strip('_')
+
+        # 1) live price snapshot (from price_store) with robust matching
+        price_snapshot = 0.0
+        price_snapshot_updated_at = 0
+        try:
+            stations = price_store.list_stations()  # [{id,name,price_php_per_liter,updated_at,…}]
+            match = None
+            target_norm = _norm_dashes(station_name)
+            target_slug = _slug(station_name)
+
+            # Try id exact (normalized) first
+            for s in stations:
+                if _norm_dashes(s.get("id")) == target_norm:
+                    match = s; break
+
+            # Try name exact (normalized)
+            if match is None:
+                for s in stations:
+                    if _norm_dashes(s.get("name")) == target_norm:
+                        match = s; break
+
+            # Try slug match on name (handles punctuation/hyphens)
+            if match is None:
+                for s in stations:
+                    if _slug(s.get("name")) == target_slug:
+                        match = s; break
+
+            if match:
+                price_snapshot = float(match.get("price_php_per_liter") or 0)
+                price_snapshot_updated_at = int(match.get("updated_at") or 0)
+        except Exception as _e:
+            print("⚠️ price snapshot error:", _e)
+
+        # 2) live discount snapshot (from discount_store), also robust to name variants
+        dpl_snapshot = 0.0
+        dpl_captured_at = int(datetime.utcnow().timestamp())
+        try:
+            # First, try exact key (as entered)
+            val = discount_store.get(station_name)
+            if val is None:
+                # fallback: examine all keys with our normalizers
+                all_discounts = discount_store.get_all() or {}
+                for k, v in all_discounts.items():
+                    if _norm_dashes(k) == target_norm or _slug(k) == target_slug:
+                        val = v; break
+            if val is not None:
+                dpl_snapshot = float(val)
+        except Exception as _e:
+            print("⚠️ discount snapshot error:", _e)
+
+        print(f"[BOOK] snapshots: {price_snapshot} {dpl_snapshot} {price_snapshot_updated_at} {dpl_captured_at} (station='{station_name}')")
+
+        
         row = {
             'account_code': account_code,
-            'station': request.form.get('station'),
-            'requested_amount_php': request.form.get('requested_amount_php'),
+            'station': station_name,
+            'requested_amount_php': float(request.form.get('requested_amount_php') or 0),
             'refuel_datetime': request.form.get('refuel_datetime'),
+
             'driver_name': driver_data['driver_name'],
             'vehicle_plate': driver_data['vehicle_plate'],
             'truck_make': driver_data['truck_make'],
             'truck_model': driver_data['truck_model'],
             'number_of_wheels': driver_data['number_of_wheels'],
             'fuel_type': driver_data['fuel_type'],
+
             'contact_name': request.form.get('contact_number').split('–')[0].strip(),
-            'contact_number': request.form.get('contact_number').split('–')[-1].strip()
+            'contact_number': request.form.get('contact_number').split('–')[-1].strip(),
+
+            # ---- booking-time snapshots (immutable after booking) ----
+            'price_snapshot_php_per_liter': price_snapshot,
+            'price_snapshot_updated_at': price_snapshot_updated_at,
+            'discount_snapshot_php_per_liter': dpl_snapshot,
+            'discount_snapshot_captured_at': dpl_captured_at,
+
+            # status + audit timestamps at creation (UTC; rendered as Manila in UI)
+            'status': 'Unverified',
+            'created_at': datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
+            'updated_at': datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
         }
+
 
         # === SAVE BOOKING (CSV mode writes to data/master_vouchers.csv) ===
         try:
