@@ -177,6 +177,7 @@ data/presets/*.csv
 data/discount_store.json
 data/discount_history.csv
 data/station_prices.json.bak
+data/station_prices.json
 
 # Local DBs
 data/*.db
@@ -184,7 +185,6 @@ data/*.db
 # Allowlist (keep these versioned)
 !data/stations.csv
 !data/customers.csv
-!data/station_prices.json
 
 # Voucher ledger (runtime)
 data/master_vouchers.csv
