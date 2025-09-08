@@ -147,18 +147,24 @@
 
     <table>
         <thead>
-            <tr>
-                <th>Voucher ID</th>
-                <th>Driver</th>
-                <th>Station</th>
-                <th>Refuel Date</th>
-                <th>Status</th>
-                <th>Verify</th>
-                <th>Total</th>
-                <th>PNG</th>
-                <th>Delete PNGs</th>
-            </tr>
+          <tr>
+            <th>Voucher ID</th>
+            <th>Driver</th>
+            <th>Station</th>
+            <th>Refuel Date</th>
+            <th>Status</th>
+            <th>Verify</th>
+            <!-- NEW sense-check columns -->
+            <th>Price (₱/L)</th>
+            <th>Discount (₱/L)</th>
+            <th>Requested (₱)</th>
+            <!-- end new -->
+            <th>Total</th>
+            <th>PNG</th>
+            <th>Delete PNGs</th>
+          </tr>
         </thead>
+
 
         <tbody>
             {% for row in vouchers %}
@@ -172,21 +178,61 @@
                 </td>
                 <td>{{ row['status'] }}</td>
 
-                <!-- NEW: Verify action -->
+                <!-- NEW: Verify action (unchanged logic) -->
                 <td>
-                    {% if row['status'] == 'Unverified' %}
-                        <a
-                          class="verify-button"
-                          href="/ops/voucher/{{ row['voucher_id'] }}/status/Unredeemed?next={{ url_for('form') }}{% if ops_token %}&token={{ ops_token }}{% endif %}">
-                          Verify
-                        </a>
-
-                    {% else %}
-                        <span style="color:#777;">—</span>
-                    {% endif %}
+                  {% if row['status'] == 'Unverified' %}
+                    <a
+                      class="verify-button"
+                      href="/ops/voucher/{{ row['voucher_id'] }}/status/Unredeemed?next={{ url_for('form') }}{% if ops_token %}&token={{ ops_token }}{% endif %}">
+                      Verify
+                    </a>
+                  {% else %}
+                    <span style="color:#777;">—</span>
+                  {% endif %}
                 </td>
 
-                <td>₱{{ row['total_dispensed'] }}</td>
+                <!-- NEW sense-check cells -->
+
+                {# Price per liter (prefer snapshot, else live) #}
+                {% set _price = row.get('price_snapshot_php_per_liter') or row.get('live_price_php_per_liter') %}
+                <td style="white-space:nowrap;">
+                  {% if _price not in (None, '', 'nan') %}
+                    ₱{{ '%.2f'|format(_price) }}/L
+                  {% else %}
+                    —
+                  {% endif %}
+                </td>
+
+                {# Discount per liter (prefer snapshot, else live/legacy) #}
+                {% set _disc = row.get('discount_snapshot_php_per_liter') or row.get('discount_per_liter') %}
+                <td style="white-space:nowrap;">
+                  {% if _disc not in (None, '', 'nan') %}
+                    ₱{{ '%.2f'|format(_disc) }}/L
+                  {% else %}
+                    —
+                  {% endif %}
+                </td>
+
+                {# Requested PHP #}
+                {% set _req = row.get('requested_amount_php') %}
+                <td style="white-space:nowrap;">
+                  {% if _req not in (None, '', 'nan') %}
+                    ₱{{ '{:,.2f}'.format(_req|float) }}
+                  {% else %}
+                    —
+                  {% endif %}
+                </td>
+
+                {# Total dispensed (support both legacy and *_php) #}
+                {% set _total = row.get('total_dispensed') or row.get('total_dispensed_php') %}
+                <td style="white-space:nowrap;">
+                  {% if _total not in (None, '', 'nan') %}
+                    ₱{{ '{:,.2f}'.format(_total|float) }}
+                  {% else %}
+                    —
+                  {% endif %}
+                </td>
+
                 <td>
                     <a class="download-icon" href="/static/qr_codes/{{ row['voucher_id'] }}_Official.png" download>📥</a>
                 </td>

@@ -251,14 +251,101 @@ def ops_set_status(voucher_id, new_status):
     if new_status == 'Redeemed':
         ts = datetime.now().isoformat(timespec='seconds')
         repo.set_status(voucher_id, 'Redeemed', ts)
+
+    
     elif new_status == 'Unredeemed':
-        # Approval step: first generate assets, then mark approved
+        # Approval step: first generate assets, then compute & persist math, then mark approved
         try:
             generate_assets_for_row(row)
         except Exception as gen_err:
             append_audit("ops_generate_assets_error", voucher_id, prev, new_status, str(gen_err))
             return f"<h2>Failed to generate voucher assets: {gen_err}</h2>", 500
+
+        # ---- Compute figures using snapshots (fallback to live) ----
+        from datetime import datetime as _dt
+
+        station_name = (row.get("station") or "").strip()
+        try:
+            amount = float(row.get("requested_amount_php") or 0)
+        except Exception:
+            amount = 0.0
+
+        # Prefer booking-time snapshots
+        try:
+            snap_price = float(row.get("price_snapshot_php_per_liter") or 0)
+        except Exception:
+            snap_price = 0.0
+        try:
+            snap_disc = float(row.get("discount_snapshot_php_per_liter") or 0)
+        except Exception:
+            snap_disc = 0.0
+
+        price_updated_at = int(row.get("price_snapshot_updated_at") or 0) if str(row.get("price_snapshot_updated_at") or "").isdigit() else 0
+        disc_captured_at = int(row.get("discount_snapshot_captured_at") or 0) if str(row.get("discount_snapshot_captured_at") or "").isdigit() else 0
+
+        # Fallbacks to current live values if snapshot missing/zero
+        price = snap_price
+        if price <= 0:
+            # Look up by station name in price_store
+            match = None
+            for s in price_store.list_stations():
+                if (s.get("name") or "").strip().lower() == station_name.lower():
+                    match = s
+                    break
+            price = float(match.get("price_php_per_liter") or 0) if match else 0.0
+            price_updated_at = int(match.get("updated_at") or 0) if match else 0
+
+        dpl = snap_disc
+        if dpl < 0:
+            dpl = 0.0
+        if dpl == 0.0:
+            # Pull current configured discount for station (ok if 0)
+            try:
+                dpl_live = discount_store.get(station_name)
+                if dpl_live is not None:
+                    dpl = float(dpl_live)
+            except Exception:
+                pass
+            if not disc_captured_at:
+                disc_captured_at = int(_dt.now().timestamp())
+
+        # ---- Do the math (guard against zero price) ----
+        if amount > 0 and price > 0:
+            liters_requested = round(amount / price, 2)
+            discount_total = round(liters_requested * dpl, 2)
+            total_dispensed = round(amount + discount_total, 2)
+            liters_dispensed = round(liters_requested + (discount_total / price if price else 0), 2)
+        else:
+            liters_requested = 0.0
+            discount_total = 0.0
+            total_dispensed = amount
+            liters_dispensed = 0.0
+
+        # ---- Persist (repo.update_voucher_fields mirrors *_php to legacy columns) ----
+        repo.update_voucher_fields(voucher_id, {
+            # store the values we actually used
+            "live_price_php_per_liter": price,
+            "discount_per_liter": dpl,
+
+            # keep snapshots if they weren't already stored
+            "price_snapshot_php_per_liter": row.get("price_snapshot_php_per_liter") or price,
+            "price_snapshot_updated_at": row.get("price_snapshot_updated_at") or price_updated_at,
+            "discount_snapshot_php_per_liter": row.get("discount_snapshot_php_per_liter") or dpl,
+            "discount_snapshot_captured_at": row.get("discount_snapshot_captured_at") or disc_captured_at,
+
+            # computed totals
+            "liters_requested": liters_requested,
+            "discount_total_php": discount_total,
+            "total_dispensed_php": total_dispensed,
+            "liters_dispensed": liters_dispensed,
+
+            # bookkeeping
+            "computed_at": _dt.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
+        })
+
+        # finally flip status to Unredeemed
         repo.set_status(voucher_id, 'Unredeemed', "")
+        
     else:
         repo.set_status(voucher_id, new_status, "")
 
