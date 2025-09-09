@@ -167,6 +167,25 @@ def _ensure_voucher_columns(df: pd.DataFrame) -> pd.DataFrame:
         df['redemption_timestamp'] = ""
     return df
 
+# ---------- Helpers for parity/export ----------
+def _coalesce(*vals):
+    """Return the first non-empty/non-NaN value."""
+    for v in vals:
+        if v is None:
+            continue
+        s = str(v).strip()
+        if s == "" or s.lower() == "nan":
+            continue
+        return v
+    return None
+
+def _fmt_money(v):
+    """Format numeric-like value to 2 decimals, empty if not a number."""
+    try:
+        return f"{float(v):.2f}"
+    except Exception:
+        return ""
+
 def _check_admin_key(req):
     key = req.args.get("key") or req.headers.get("X-Admin-Key")
     return key == ADMIN_KEY
@@ -252,7 +271,7 @@ def ops_set_status(voucher_id, new_status):
         ts = datetime.now().isoformat(timespec='seconds')
         repo.set_status(voucher_id, 'Redeemed', ts)
 
-    
+
     elif new_status == 'Unredeemed':
         # Approval step: first generate assets, then compute & persist math, then mark approved
         try:
@@ -345,7 +364,7 @@ def ops_set_status(voucher_id, new_status):
 
         # finally flip status to Unredeemed
         repo.set_status(voucher_id, 'Unredeemed', "")
-        
+
     else:
         repo.set_status(voucher_id, new_status, "")
 
@@ -445,7 +464,7 @@ def book():
                 'number_of_wheels': parts[4],
                 'fuel_type': parts[5]
             }
-        
+
         # ---- CAPTURE BOOKING-TIME SNAPSHOTS (price & discount) ----
         station_name = (request.form.get('station') or '').strip()
 
@@ -512,7 +531,7 @@ def book():
 
         print(f"[BOOK] snapshots: {price_snapshot} {dpl_snapshot} {price_snapshot_updated_at} {dpl_captured_at} (station='{station_name}')")
 
-        
+
         row = {
             'account_code': account_code,
             'station': station_name,
@@ -550,7 +569,7 @@ def book():
         except Exception as e:
             print("⚠️ Failed to create Unverified booking:", e)
 
-        
+
         preset_path = f"data/presets/{account_code}_presets.csv"
         existing = pd.read_csv(preset_path, encoding='utf-8-sig') if os.path.isfile(preset_path) else pd.DataFrame()
         if driver_data['vehicle_plate'] not in existing.get('vehicle_plate', []):
@@ -569,48 +588,139 @@ def discount_locator():
         stations = []
     return render_template('locator.html', stations=stations)
 
+# ======= SUPPLIER API (parity with CSV export) =======
 @app.route('/supplier-api/<voucher_id>', methods=['GET'])
 def supplier_api(voucher_id):
     token = request.args.get("token")
     if token != SUPPLIER_API_TOKEN:
         return {"error": "Unauthorized – Invalid or missing token."}, 403
+
     try:
-        row = repo.get_voucher(voucher_id)
-        if not row:
+        r = repo.get_voucher(voucher_id)
+        if not r:
             return {"error": f"Voucher ID '{voucher_id}' not found."}, 404
-        response = {
-            "Customer": "UniFleet",
-            "Fuel Product": "Diesel",
-            "Qty": float(row.get("liters_requested", 0) or 0),
-            "Driver": row.get("driver_name", ""),
-            "Plate": row.get("vehicle_plate", ""),
-            "Invoice": row.get("voucher_id", ""),
-            "Status": row.get("status", "Unknown") or "Unknown"
+
+        # Snapshot-first values with legacy fallback
+        req   = _coalesce(r.get("requested_amount_php"), 0) or 0
+        price = _coalesce(r.get("price_snapshot_php_per_liter"), r.get("live_price_php_per_liter"))
+        disc  = _coalesce(r.get("discount_snapshot_php_per_liter"), r.get("discount_per_liter"))
+
+        disc_total  = _coalesce(r.get("discount_total_php"),  r.get("discount_total"))
+        total_value = _coalesce(r.get("total_dispensed_php"), r.get("total_dispensed"))
+
+        liters_req = r.get("liters_requested")
+        try:
+            if (liters_req is None or str(liters_req).strip() == "") and price not in (None, "", "nan"):
+                p = float(price)
+                if p > 0:
+                    liters_req = round(float(req) / p, 2)
+        except Exception:
+            pass
+
+        liters_disp = r.get("liters_dispensed")
+        try:
+            if (liters_disp is None or str(liters_disp).strip() == "") and price not in (None, "", "nan"):
+                p = float(price)
+                dt = float(disc_total or 0)
+                if p > 0 and liters_req not in (None, "", "nan"):
+                    liters_disp = round(float(liters_req) + dt / p, 2)
+        except Exception:
+            pass
+
+        ts = r.get("refuel_datetime") or r.get("expected_refill_date") or r.get("transaction_date")
+        refuel_date_mnl = manila_time_filter(ts)
+
+        return {
+            "customer": "UniFleet",
+            "fuelProduct": "Diesel",
+            "invoice": r.get("voucher_id", ""),
+            "station": r.get("station", ""),
+            "pricePhpPerLiter": float(price) if price not in (None, "", "nan") else None,
+            "discountPhpPerLiter": float(disc) if disc not in (None, "", "nan") else None,
+            "requestedAmountPhp": float(req),
+            "freeFuelValuePhp": float(disc_total) if disc_total not in (None, "", "nan") else None,
+            "totalValuePhp": float(total_value) if total_value not in (None, "", "nan") else None,
+            "litersRequested": float(liters_req) if liters_req not in (None, "", "nan") else None,
+            "litersDispensed": float(liters_disp) if liters_disp not in (None, "", "nan") else None,
+            "driver": r.get("driver_name", ""),
+            "plate": r.get("vehicle_plate", ""),
+            "status": r.get("status", "") or "Unknown",
+            "refuelDate": refuel_date_mnl
         }
-        return response
     except Exception as e:
         return {"error": f"Unable to process request: {str(e)}"}, 500
 
+# ======= SUPPLIER CSV (parity with Supplier API) =======
 @app.route('/export_supplier_csv')
 def export_supplier_csv():
+    """
+    CSV parity with supplier API using snapshot math.
+    Columns:
+      Customer, Fuel Product, Invoice, Station,
+      Price (₱/L), Discount (₱/L), Requested (₱),
+      Free Fuel Value (₱), Total Value (₱),
+      Liters Requested, Liters Dispensed,
+      Driver, Plate, Status, Refuel Date
+    """
     try:
         rows = repo.list_all_vouchers()
-        df = pd.DataFrame(rows)
-        needed = ['voucher_id','driver_name','vehicle_plate','liters_requested','status']
-        for c in needed:
-            if c not in df.columns:
-                df[c] = ""
-        export_df = df[needed].rename(columns={
-            'voucher_id': 'Invoice',
-            'driver_name': 'Driver',
-            'vehicle_plate': 'Plate',
-            'liters_requested': 'Qty',
-            'status': 'Status'
-        })
-        export_df.insert(0, 'Customer', 'UniFleet')
-        export_df.insert(2, 'Fuel Product', 'Diesel')
+        if not rows:
+            return "<h2>No vouchers to export.</h2>", 200
+
+        out_rows = []
+        for r in rows:
+            vid   = str(r.get("voucher_id", "")).strip()
+            stat  = r.get("station", "") or ""
+            req   = _coalesce(r.get("requested_amount_php"), 0) or 0
+
+            price = _coalesce(r.get("price_snapshot_php_per_liter"), r.get("live_price_php_per_liter"))
+            disc  = _coalesce(r.get("discount_snapshot_php_per_liter"), r.get("discount_per_liter"))
+
+            disc_total  = _coalesce(r.get("discount_total_php"),  r.get("discount_total"))
+            total_value = _coalesce(r.get("total_dispensed_php"), r.get("total_dispensed"))
+
+            liters_req = r.get("liters_requested")
+            try:
+                if (liters_req is None or str(liters_req).strip() == "") and price not in (None, "", "nan"):
+                    p = float(price)
+                    if p > 0:
+                        liters_req = round(float(req) / p, 2)
+            except Exception:
+                pass
+
+            liters_disp = r.get("liters_dispensed")
+            try:
+                if (liters_disp is None or str(liters_disp).strip() == "") and price not in (None, "", "nan"):
+                    p = float(price)
+                    dt = float(disc_total or 0)
+                    if p > 0 and liters_req not in (None, "", "nan"):
+                        liters_disp = round(float(liters_req) + dt / p, 2)
+            except Exception:
+                pass
+
+            ts = r.get("refuel_datetime") or r.get("expected_refill_date") or r.get("transaction_date")
+            refuel_date_mnl = manila_time_filter(ts)
+
+            out_rows.append({
+                "Customer": "UniFleet",
+                "Fuel Product": "Diesel",
+                "Invoice": vid,
+                "Station": stat,
+                "Price (₱/L)": _fmt_money(price),
+                "Discount (₱/L)": _fmt_money(disc),
+                "Requested (₱)": _fmt_money(req),
+                "Free Fuel Value (₱)": _fmt_money(disc_total),
+                "Total Value (₱)": _fmt_money(total_value),
+                "Liters Requested": _fmt_money(liters_req),
+                "Liters Dispensed": _fmt_money(liters_disp),
+                "Driver": r.get("driver_name", "") or "",
+                "Plate": r.get("vehicle_plate", "") or "",
+                "Status": r.get("status", "") or "",
+                "Refuel Date": refuel_date_mnl,
+            })
+
         export_path = 'data/supplier_export.csv'
-        export_df.to_csv(export_path, index=False, encoding='utf-8-sig')
+        pd.DataFrame(out_rows).to_csv(export_path, index=False, encoding='utf-8-sig')
         return send_file(export_path, as_attachment=True)
     except Exception as e:
         return f"<h2>Failed to export supplier CSV: {str(e)}</h2>", 500
