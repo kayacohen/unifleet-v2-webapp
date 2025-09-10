@@ -2,7 +2,7 @@
 <html>
 <head>
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
-    <title>Upload CSV – UniFleet</title>
+    <title>UniFleet – Vouchers</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -36,17 +36,10 @@
             margin-top: 2rem;
         }
 
-        .upload-section {
-            max-width: 460px;
+        .card {
             background: #fff;
-            padding: 20px;
             border-radius: 8px;
-            margin-bottom: 30px;
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-
-        form {
-            margin: 0;
         }
 
         table {
@@ -120,7 +113,116 @@
             vertical-align: middle;
         }
 
+        /* Collapsible panel */
+        .panel {
+          background: #fff;
+          border-radius: 10px;
+          box-shadow: 0 2px 4px rgba(0,0,0,0.08);
+          padding: 0 0 10px 0;
+          margin-bottom: 24px;
+          border: 1px solid #e9eef5;
         }
+        .panel > summary {
+          cursor: pointer;
+          list-style: none;
+          padding: 16px 18px;
+          font-size: 1.2rem;
+          font-weight: 700;
+          color: #233b64;
+          border-bottom: 1px solid #f0f3f8;
+        }
+        .panel > summary::-webkit-details-marker { display: none; }
+
+        /* Constrain panel inner width and center it */
+        .panel .panel-controls,
+        .panel .station-grid,
+        .panel .panel-actions {
+          max-width: 900px;
+          margin: 0 auto;
+        }
+
+        .panel-controls {
+          display: flex;
+          gap: 10px;
+          align-items: center;
+          padding: 12px 18px 0 18px;
+          color: #506080;
+          font-size: 0.9rem;
+        }
+        .panel-controls .linklike {
+          background: none;
+          border: none;
+          color: #0054a6;
+          cursor: pointer;
+          padding: 0;
+          font: inherit;
+        }
+        .panel-controls .linklike:hover { text-decoration: underline; }
+        .panel-controls .sep { color: #9aa7bd; }
+
+        /* >>> SINGLE compact station-grid rule (removed earlier duplicate) */
+        .station-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+          gap: 8px 12px;
+          padding: 12px 18px 6px 18px;
+          max-height: 320px;      /* more compact */
+          overflow: auto;
+        }
+        .station-pill {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          background: #f7f9fc;
+          border: 1px solid #e6edf6;
+          border-radius: 999px;
+          padding: 6px 10px;      /* smaller pill */
+          cursor: pointer;
+          user-select: none;
+          transition: background .15s ease;
+          font-size: 0.9rem;      /* smaller text */
+        }
+        .station-pill:hover { background: #eef4fb; }
+        .station-pill input[type="checkbox"] {
+          width: 14px; height: 14px; /* smaller checkbox */
+        }
+
+        .station-pill-text {
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          max-width: 100%;
+          color: #334e7b;
+        }
+
+        .panel-actions {
+          display: flex;
+          gap: 12px;
+          padding: 8px 18px 10px 18px;
+        }
+
+        .btn-primary {
+          background-color: #0b4a94;
+          color: #fff;
+          border: none;
+          border-radius: 6px;
+          padding: 10px 16px;
+          font-weight: 600;
+          cursor: pointer;
+        }
+        .btn-primary:hover { filter: brightness(0.96); }
+
+        .btn-secondary {
+          display: inline-block;
+          background-color: #f6f8fb;
+          color: #0b4a94;
+          border: 1px solid #d8e2f0;
+          border-radius: 6px;
+          padding: 10px 16px;
+          font-weight: 600;
+          text-decoration: none;
+        }
+        .btn-secondary:hover { background: #eef3f9; }
     </style>
 </head>
 <body>
@@ -129,18 +231,47 @@
     <div class="subnav">
         <a href="/register">Register</a>
         <a href="/book">Book</a>
-        <a href="/export_supplier_csv" class="btn btn-primary" download>Download Supplier CSV</a>
-
+        <a href="/export_supplier_csv" download>Download Supplier CSV</a>
     </div>
 
-    <h2>Upload CSV</h2>
-    <div class="upload-section">
-        <form action="/upload_csv" method="post" enctype="multipart/form-data">
-            <input type="file" name="csv_file" accept=".csv" required>
-            <br><br>
-            <button type="submit">Upload & Generate Vouchers</button>
-        </form>
-    </div>
+    <!-- Supplier PDF filter + actions (persist via cookie) -->
+    <!-- NOTE: removed `open` so it's collapsed by default -->
+    <details class="panel">
+      <summary>Supplier PDF</summary>
+
+      <!-- Compact controls row -->
+      <div class="panel-controls">
+        <button type="button" class="linklike" id="selectAllStations">Select all</button>
+        <span class="sep">•</span>
+        <button type="button" class="linklike" id="clearAllStations">Clear all</button>
+      </div>
+
+      <!-- Station picker (posts cookie of selected station ids) -->
+      <form action="/pdf/prefs" method="POST" id="pdfPrefsForm">
+        {% set default_all = (selected_station_ids|length == 0) %}
+
+        <div class="station-grid">
+          {% for s in station_options %}
+            <label class="station-pill">
+              <input
+                type="checkbox"
+                name="station_id"
+                value="{{ s.get('id') }}"
+                {% if default_all or (s.get('id') in selected_station_ids) %}checked{% endif %}
+              >
+              <span class="station-pill-text">
+                {{ (s.get('brand') or '') }} — {{ (s.get('name') or '') }}
+              </span>
+            </label>
+          {% endfor %}
+        </div>
+
+        <div class="panel-actions">
+          <button type="submit" class="btn-primary">Save Selection</button>
+          <a class="btn-secondary" href="/supplier-sheet.pdf" download>Download Supplier PDF</a>
+        </div>
+      </form>
+    </details>
 
     <h2>All Vouchers</h2>
     <input type="text" id="searchInput" onkeyup="filterTable()" placeholder="Search vouchers..." style="margin-bottom: 15px; padding: 8px; width: 100%; max-width: 400px;">
@@ -154,17 +285,14 @@
             <th>Refuel Date</th>
             <th>Status</th>
             <th>Verify</th>
-            <!-- NEW sense-check columns -->
             <th>Price (₱/L)</th>
             <th>Discount (₱/L)</th>
             <th>Requested (₱)</th>
-            <!-- end new -->
             <th>Total</th>
             <th>PNG</th>
             <th>Delete PNGs</th>
           </tr>
         </thead>
-
 
         <tbody>
             {% for row in vouchers %}
@@ -178,7 +306,6 @@
                 </td>
                 <td>{{ row['status'] }}</td>
 
-                <!-- NEW: Verify action (unchanged logic) -->
                 <td>
                   {% if row['status'] == 'Unverified' %}
                     <a
@@ -191,9 +318,6 @@
                   {% endif %}
                 </td>
 
-                <!-- NEW sense-check cells -->
-
-                {# Price per liter (prefer snapshot, else live) #}
                 {% set _price = row.get('price_snapshot_php_per_liter') or row.get('live_price_php_per_liter') %}
                 <td style="white-space:nowrap;">
                   {% if _price not in (None, '', 'nan') %}
@@ -203,7 +327,6 @@
                   {% endif %}
                 </td>
 
-                {# Discount per liter (prefer snapshot, else live/legacy) #}
                 {% set _disc = row.get('discount_snapshot_php_per_liter') or row.get('discount_per_liter') %}
                 <td style="white-space:nowrap;">
                   {% if _disc not in (None, '', 'nan') %}
@@ -213,7 +336,6 @@
                   {% endif %}
                 </td>
 
-                {# Requested PHP #}
                 {% set _req = row.get('requested_amount_php') %}
                 <td style="white-space:nowrap;">
                   {% if _req not in (None, '', 'nan') %}
@@ -223,7 +345,6 @@
                   {% endif %}
                 </td>
 
-                {# Total dispensed (support both legacy and *_php) #}
                 {% set _total = row.get('total_dispensed') or row.get('total_dispensed_php') %}
                 <td style="white-space:nowrap;">
                   {% if _total not in (None, '', 'nan') %}
@@ -255,12 +376,29 @@
         function filterTable() {
             const input = document.getElementById("searchInput").value.toLowerCase();
             const rows = document.querySelectorAll("tbody tr");
-
             rows.forEach(row => {
                 const rowText = row.innerText.toLowerCase();
                 row.style.display = rowText.includes(input) ? "" : "none";
             });
         }
+
+        // Supplier PDF: select/clear helpers
+        (function () {
+          const form = document.getElementById("pdfPrefsForm");
+          if (!form) return;
+
+          const selectAllBtn = document.getElementById("selectAllStations");
+          const clearAllBtn  = document.getElementById("clearAllStations");
+
+          function setAll(checked) {
+            form.querySelectorAll('input[type="checkbox"][name="station_id"]').forEach(cb => {
+              cb.checked = checked;
+            });
+          }
+
+          if (selectAllBtn) selectAllBtn.addEventListener("click", () => setAll(true));
+          if (clearAllBtn)  clearAllBtn.addEventListener("click", () => setAll(false));
+        })();
     </script>
 
 </body>

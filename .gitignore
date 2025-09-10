@@ -194,3 +194,6 @@ data/price_history.csv
 
 # Generated voucher images
 static/qr_codes/*.png
+
+# PDF exports
+data/reports/*.pdf
