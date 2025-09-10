@@ -1,8 +1,12 @@
-from flask import Flask, render_template, request, redirect, send_file, abort, url_for, flash, jsonify
+from flask import (
+    Flask, render_template, request, redirect, send_file, abort,
+    url_for, flash, jsonify, make_response
+)
 import os
+import io
 import subprocess
 import pandas as pd
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 import random
 import string
@@ -10,16 +14,25 @@ import csv
 import re
 import pytz
 
-
 import price_store
 from persistence import get_repo  # repo abstraction (CSV or DB)
 from generate_voucher import generate_assets_for_row  # approval-time asset generation
+# PDF builder is optional; don't crash app if it's missing
+try:
+    from report_pdf import build_supplier_pdf  # supplier PDF builder
+    _PDF_IMPORT_ERROR = None
+except Exception as _e:
+    build_supplier_pdf = None
+    _PDF_IMPORT_ERROR = str(_e)
 
 # NEW: discounts storage
 from discount_store import DiscountStore, DiscountValueError
 
 app = Flask(__name__)
 
+# =========================
+# Filters / Utilities
+# =========================
 @app.template_filter("manila_time")
 def manila_time_filter(value):
     """
@@ -42,29 +55,24 @@ def manila_time_filter(value):
 
     # Try ISO first
     try:
-        # fromisoformat handles 'YYYY-MM-DD', 'YYYY-MM-DDTHH:MM[:SS][.ffffff][+/-HH:MM]'
         dt = datetime.fromisoformat(s)
         if dt.tzinfo is None:
-            # Treat browser-sent naive datetime as already in Manila local time
             dt = manila.localize(dt)
         else:
-            # Convert any aware datetime to Manila
             dt = dt.astimezone(manila)
         return dt.strftime("%Y-%m-%d %H:%M")
     except Exception:
         pass
 
-    # Try generic pandas/strptime parsing as last resort
+    # Try generic parsing as last resort
     for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d", "%m/%d/%Y", "%m/%d/%y"):
         try:
             dt = datetime.strptime(s, fmt)
-            # Treat parsed naive values as Manila local too
             dt = manila.localize(dt)
             return dt.strftime("%Y-%m-%d %H:%M")
         except Exception:
             continue
 
-    # Fallback: show raw string if nothing matched
     return s
 
 app.secret_key = 'your_secret_key_here'  # Required for flashing messages
@@ -190,12 +198,16 @@ def _check_admin_key(req):
     key = req.args.get("key") or req.headers.get("X-Admin-Key")
     return key == ADMIN_KEY
 
+# =========================
+# Home / Dashboard
+# =========================
 @app.route('/')
 def home():
     return redirect("/form")
 
 @app.route('/form')
 def form():
+    # existing voucher table data
     try:
         vouchers = repo.list_recent_vouchers(limit=50)
         for row in vouchers:
@@ -206,9 +218,23 @@ def form():
     except Exception as e:
         print(f"⚠️ Error loading vouchers: {e}")
         vouchers = []
-    return render_template("form.html", today=date.today().isoformat(), vouchers=vouchers, ops_token=OPS_TOKEN)
 
+    # NEW: supply station options + persisted selections for the PDF filter UI
+    stations = price_store.list_stations()  # [{id, name, brand, ...}]
+    stations = sorted(stations, key=lambda s: (s.get("brand",""), s.get("name","")))
+    cookie_val = request.cookies.get("pdf_station_ids", "")
+    selected_station_ids = [s for s in cookie_val.split(",") if s.strip()]
 
+    return render_template(
+        "form.html",
+        today=date.today().isoformat(),
+        vouchers=vouchers,
+        ops_token=OPS_TOKEN,
+        station_options=stations,
+        selected_station_ids=selected_station_ids,
+    )
+
+# -------------- (CSV upload route stays; you’ll remove visually in form.html soon) --------------
 @app.route('/upload_csv', methods=['POST'])
 def upload_csv():
     uploaded_file = request.files['csv_file']
@@ -271,16 +297,8 @@ def ops_set_status(voucher_id, new_status):
         ts = datetime.now().isoformat(timespec='seconds')
         repo.set_status(voucher_id, 'Redeemed', ts)
 
-
     elif new_status == 'Unredeemed':
-        # Approval step: first generate assets, then compute & persist math, then mark approved
-        try:
-            generate_assets_for_row(row)
-        except Exception as gen_err:
-            append_audit("ops_generate_assets_error", voucher_id, prev, new_status, str(gen_err))
-            return f"<h2>Failed to generate voucher assets: {gen_err}</h2>", 500
-
-        # ---- Compute figures using snapshots (fallback to live) ----
+        # === Approve flow: compute & persist first, then (re)generate assets ===
         from datetime import datetime as _dt
 
         station_name = (row.get("station") or "").strip()
@@ -305,7 +323,6 @@ def ops_set_status(voucher_id, new_status):
         # Fallbacks to current live values if snapshot missing/zero
         price = snap_price
         if price <= 0:
-            # Look up by station name in price_store
             match = None
             for s in price_store.list_stations():
                 if (s.get("name") or "").strip().lower() == station_name.lower():
@@ -318,7 +335,6 @@ def ops_set_status(voucher_id, new_status):
         if dpl < 0:
             dpl = 0.0
         if dpl == 0.0:
-            # Pull current configured discount for station (ok if 0)
             try:
                 dpl_live = discount_store.get(station_name)
                 if dpl_live is not None:
@@ -361,6 +377,19 @@ def ops_set_status(voucher_id, new_status):
             # bookkeeping
             "computed_at": _dt.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
         })
+
+        # ---- Reload fresh row & (re)generate assets *after* fields exist ----
+        try:
+            fresh = repo.get_voucher(voucher_id)
+            # If numbers are still missing, fail fast
+            if not fresh or not fresh.get("requested_amount_php") or price <= 0:
+                append_audit("ops_generate_assets_skip", voucher_id, prev, new_status, "missing amount/price after compute")
+                return "<h2>Cannot generate assets: missing amount/price after compute.</h2>", 400
+
+            generate_assets_for_row(fresh)
+        except Exception as gen_err:
+            append_audit("ops_generate_assets_error", voucher_id, prev, new_status, str(gen_err))
+            return f"<h2>Failed to generate voucher assets: {gen_err}</h2>", 500
 
         # finally flip status to Unredeemed
         repo.set_status(voucher_id, 'Unredeemed', "")
@@ -476,50 +505,41 @@ def book():
 
         def _slug(s: str) -> str:
             s = _norm_dashes(s)
-            s = _re.sub(r'[^a-z0-9\s-]', '', s)      # keep letters/digits/space/hyphen
-            s = _re.sub(r'[\s-]+', '_', s)           # collapse to underscores
+            s = _re.sub(r'[^a-z0-9\s-]', '', s)
+            s = _re.sub(r'[\s-]+', '_', s)
             return s.strip('_')
 
-        # 1) live price snapshot (from price_store) with robust matching
+        # 1) live price snapshot (from price_store)
         price_snapshot = 0.0
         price_snapshot_updated_at = 0
         try:
-            stations = price_store.list_stations()  # [{id,name,price_php_per_liter,updated_at,…}]
+            stations = price_store.list_stations()
             match = None
             target_norm = _norm_dashes(station_name)
             target_slug = _slug(station_name)
-
-            # Try id exact (normalized) first
             for s in stations:
                 if _norm_dashes(s.get("id")) == target_norm:
                     match = s; break
-
-            # Try name exact (normalized)
             if match is None:
                 for s in stations:
                     if _norm_dashes(s.get("name")) == target_norm:
                         match = s; break
-
-            # Try slug match on name (handles punctuation/hyphens)
             if match is None:
                 for s in stations:
                     if _slug(s.get("name")) == target_slug:
                         match = s; break
-
             if match:
                 price_snapshot = float(match.get("price_php_per_liter") or 0)
                 price_snapshot_updated_at = int(match.get("updated_at") or 0)
         except Exception as _e:
             print("⚠️ price snapshot error:", _e)
 
-        # 2) live discount snapshot (from discount_store), also robust to name variants
+        # 2) live discount snapshot (from discount_store)
         dpl_snapshot = 0.0
         dpl_captured_at = int(datetime.utcnow().timestamp())
         try:
-            # First, try exact key (as entered)
             val = discount_store.get(station_name)
             if val is None:
-                # fallback: examine all keys with our normalizers
                 all_discounts = discount_store.get_all() or {}
                 for k, v in all_discounts.items():
                     if _norm_dashes(k) == target_norm or _slug(k) == target_slug:
@@ -530,7 +550,6 @@ def book():
             print("⚠️ discount snapshot error:", _e)
 
         print(f"[BOOK] snapshots: {price_snapshot} {dpl_snapshot} {price_snapshot_updated_at} {dpl_captured_at} (station='{station_name}')")
-
 
         row = {
             'account_code': account_code,
@@ -548,27 +567,23 @@ def book():
             'contact_name': request.form.get('contact_number').split('–')[0].strip(),
             'contact_number': request.form.get('contact_number').split('–')[-1].strip(),
 
-            # ---- booking-time snapshots (immutable after booking) ----
+            # snapshots
             'price_snapshot_php_per_liter': price_snapshot,
             'price_snapshot_updated_at': price_snapshot_updated_at,
             'discount_snapshot_php_per_liter': dpl_snapshot,
             'discount_snapshot_captured_at': dpl_captured_at,
 
-            # status + audit timestamps at creation (UTC; rendered as Manila in UI)
             'status': 'Unverified',
             'created_at': datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
             'updated_at': datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
         }
 
-
-        # === SAVE BOOKING (CSV mode writes to data/master_vouchers.csv) ===
+        # save booking
         try:
             created = repo.create_unverified_booking(row)
-            # Optional: log the voucher ID for sanity checks
             print("[BOOK] created voucher:", created.get("voucher_id"))
         except Exception as e:
             print("⚠️ Failed to create Unverified booking:", e)
-
 
         preset_path = f"data/presets/{account_code}_presets.csv"
         existing = pd.read_csv(preset_path, encoding='utf-8-sig') if os.path.isfile(preset_path) else pd.DataFrame()
@@ -728,7 +743,6 @@ def export_supplier_csv():
 # =========================
 # Admin: Live Prices (pre-DB)
 # =========================
-# NEW: instantiate discount store (JSON + CSV audit already created earlier)
 discount_store = DiscountStore()
 
 @app.route("/admin/prices")
@@ -737,7 +751,6 @@ def admin_prices():
         return abort(403)
     stations = price_store.list_stations()
     stations = sorted(stations, key=lambda s: (s.get("brand",""), s.get("name","")))
-    # NEW: pass discounts for the template badge/input defaults
     discounts = discount_store.get_all()
     return render_template("admin_prices.html", stations=stations, discounts=discounts)
 
@@ -775,27 +788,17 @@ def admin_prices_update():
     except Exception:
         return jsonify({"ok": False, "error": "server_error"}), 500
 
-# Read-only API (handy for previews & step #5)
+# Read-only API for previews
 @app.route("/api/v1/prices", methods=["GET"])
 def api_prices_list():
     stations = price_store.list_stations()
     return jsonify({"stations": stations})
 
 # =========================
-# Discounts (NEW for #6a)
+# Discounts
 # =========================
 @app.route("/admin/discounts/update", methods=["POST"])
 def admin_discounts_update():
-    """
-    HTML form POST from /admin/prices Discount column.
-
-    Behavior:
-      - Requires admin key (?key=...)
-      - Blank input => do nothing (flash + redirect)
-      - Range: 0.00 <= value <= 15.00
-      - Writes to discount_store (JSON + CSV audit)
-      - Always redirect back to /admin/prices?key=...
-    """
     if not _check_admin_key(request):
         return abort(403)
 
@@ -804,7 +807,6 @@ def admin_discounts_update():
     raw_value = (request.form.get("discount_per_liter") or "").strip()
 
     def _back():
-        # preserve ?key=
         target = url_for("admin_prices")
         if key:
             target = f"{target}?key={key}"
@@ -814,12 +816,10 @@ def admin_discounts_update():
         flash("Station is required.", "error")
         return _back()
 
-    # Blank means NO-OP
     if raw_value == "":
         flash(f"No changes saved for “{station}”.", "info")
         return _back()
 
-    # Parse + validate
     try:
         value = float(raw_value)
     except ValueError:
@@ -831,7 +831,6 @@ def admin_discounts_update():
         return _back()
 
     try:
-        # Write; okay if same=>same (keeps audit consistent)
         discount_store.set(station, value, actor="admin", reason="manual update")
         flash(f"Saved discount {value:.2f} PHP/L for “{station}”.", "success")
     except DiscountValueError as e:
@@ -843,14 +842,13 @@ def admin_discounts_update():
 
 @app.route("/api/v1/discounts", methods=["GET"])
 def api_discounts_list():
-    """Optional read API for current discounts."""
     try:
         return jsonify({"discounts": discount_store.get_all()})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 # =========================
-# Price Preview API (always uses stored price; flags stale)
+# Price Preview API
 # =========================
 @app.route("/api/v1/price_preview", methods=["GET"])
 def api_price_preview():
@@ -920,3 +918,76 @@ def api_price_preview():
         "total_dispensed": total_dispensed,
         "liters_dispensed": liters_dispensed
     })
+
+# =========================
+# PDF Preferences + Export
+# =========================
+@app.route("/pdf/prefs", methods=["POST"])
+def save_pdf_prefs():
+    """
+    Persist selected station ids for the PDF (checkboxes on /form).
+    Expects one or more form fields named 'station_id'.
+    Stores in a cookie 'pdf_station_ids' comma-separated for ~6 months.
+    """
+    station_ids = request.form.getlist("station_id")
+    station_ids = [s.strip() for s in station_ids if s.strip()]
+    cookie_val = ",".join(station_ids)
+    resp = make_response(redirect(url_for("form")))
+    # 6 months expiry
+    resp.set_cookie("pdf_station_ids", cookie_val, max_age=60*60*24*30*6, samesite="Lax")
+    return resp
+
+@app.route("/supplier-sheet.pdf", methods=["GET"])
+def supplier_sheet_pdf():
+    """
+    Build and return the supplier PDF.
+    Station filter resolves as:
+      1) any ?station=<id> query params (one or many),
+      2) else cookie 'pdf_station_ids',
+      3) else all stations.
+    """
+    # Guard: if PDF builder is missing, don’t crash — show a clear error
+    if build_supplier_pdf is None:
+        return (
+            f"<h2>PDF generator not available.</h2>"
+            f"<p>Import error: {_PDF_IMPORT_ERROR}</p>"
+            f"<p>Ensure <code>report_pdf.py</code> defines "
+            f"<code>build_supplier_pdf(vouchers, target_station_ids, stations, logo_path)</code>.</p>",
+            500,
+        )
+
+    # 1) explicit query selection
+    query_station_ids = request.args.getlist("station")
+    query_station_ids = [s.strip() for s in query_station_ids if s.strip()]
+
+    # 2) cookie fallback
+    cookie_val = request.cookies.get("pdf_station_ids", "")
+    cookie_station_ids = [s for s in cookie_val.split(",") if s.strip()]
+
+    # 3) default to all
+    all_stations = price_store.list_stations()
+    all_ids = [s.get("id") for s in all_stations if s.get("id")]
+
+    selected_ids = query_station_ids or cookie_station_ids or all_ids
+
+    # Build PDF in-memory
+    vouchers = repo.list_all_vouchers()
+    pdf_bytes = build_supplier_pdf(
+        vouchers=vouchers,
+        target_station_ids=set(selected_ids),
+        stations=all_stations,
+        logo_path="static/UniFleet Logo.png",
+    )
+    return send_file(
+        io.BytesIO(pdf_bytes),
+        mimetype="application/pdf",
+        as_attachment=True,
+        download_name="UniFleet_Offline_Voucher_List.pdf",
+    )
+
+# =========================
+# Entrypoint
+# =========================
+if __name__ == "__main__":
+    # Useful for local debugging
+    app.run(host="0.0.0.0", port=5000, debug=True)
