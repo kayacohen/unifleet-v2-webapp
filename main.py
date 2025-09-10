@@ -1,95 +1,32 @@
-from flask import (
-    Flask, render_template, request, redirect, send_file, abort,
-    url_for, flash, jsonify, make_response
-)
+from flask import Flask, render_template, request, redirect, send_file, abort, url_for, flash
 import os
-import io
 import subprocess
 import pandas as pd
-from datetime import date, datetime, timedelta
-from zoneinfo import ZoneInfo
+from datetime import date, datetime
+from zoneinfo import ZoneInfo  # <<< ADDED for PH timezone
 import random
 import string
 import csv
 import re
-import pytz
 
+# >>> ADD: admin prices imports
+from flask import jsonify
 import price_store
-from persistence import get_repo  # repo abstraction (CSV or DB)
-from generate_voucher import generate_assets_for_row  # approval-time asset generation
-# PDF builder is optional; don't crash app if it's missing
-try:
-    from report_pdf import build_supplier_pdf  # supplier PDF builder
-    _PDF_IMPORT_ERROR = None
-except Exception as _e:
-    build_supplier_pdf = None
-    _PDF_IMPORT_ERROR = str(_e)
-
-# NEW: discounts storage
-from discount_store import DiscountStore, DiscountValueError
 
 app = Flask(__name__)
-
-# =========================
-# Filters / Utilities
-# =========================
-@app.template_filter("manila_time")
-def manila_time_filter(value):
-    """
-    Render a date/time value as Asia/Manila local time in 'YYYY-MM-DD HH:MM'.
-    Rules:
-      - If an ISO string has NO timezone (naive), treat it as Manila local.
-      - If an ISO string HAS a timezone/offset, convert to Manila.
-      - If it's a legacy short date like '7/19/25', show as-is.
-    """
-    if not value:
-        return "—"
-
-    s = str(value).strip()
-
-    # Legacy short dates like '7/19/25' -> don't try to convert
-    if "/" in s and len(s) <= 10:
-        return s
-
-    manila = pytz.timezone("Asia/Manila")
-
-    # Try ISO first
-    try:
-        dt = datetime.fromisoformat(s)
-        if dt.tzinfo is None:
-            dt = manila.localize(dt)
-        else:
-            dt = dt.astimezone(manila)
-        return dt.strftime("%Y-%m-%d %H:%M")
-    except Exception:
-        pass
-
-    # Try generic parsing as last resort
-    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d", "%m/%d/%Y", "%m/%d/%y"):
-        try:
-            dt = datetime.strptime(s, fmt)
-            dt = manila.localize(dt)
-            return dt.strftime("%Y-%m-%d %H:%M")
-        except Exception:
-            continue
-
-    return s
-
 app.secret_key = 'your_secret_key_here'  # Required for flashing messages
 
 SUPPLIER_API_TOKEN = os.environ.get("SUPPLIER_API_TOKEN", "unifleet2025mvp")  # Default token
+
+# >>> ADD: simple admin key for the prices page
 ADMIN_KEY = os.environ.get("ADMIN_KEY", "unifleet-admin")
 
 UPLOAD_FOLDER = "uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs("data/presets", exist_ok=True)
 
-# Initialize price store JSON on startup (creates data/station_prices.json if missing)
+# >>> ADD: initialize price store JSON on startup (creates data/station_prices.json if missing)
 price_store.init_if_missing()
-
-# Persistence backend: 'csv' (default) or 'db'
-PERSISTENCE_BACKEND = os.environ.get("PERSISTENCE_BACKEND", "csv").lower()
-repo = get_repo(PERSISTENCE_BACKEND)
 
 # ===== Runtime flags / tokens (optional) =====
 ENFORCE_PHASES = os.environ.get("ENFORCE_PHASES", "").strip() == "1"
@@ -101,6 +38,7 @@ PAYMENT_INFO = {
         "label": "UnionBank",
         "account_name": "UniFleet Inc.",
         "account_number": "1234-5678-9012",  # <-- replace with real
+        # "routing_number": "XXXXXX",
     },
     "gcash": {
         "label": "GCash",
@@ -157,6 +95,7 @@ def append_price_history(station_id, old_price, new_price, updated_unix):
             if is_new:
                 writer.writeheader()
             writer.writerow({
+                # <<< CHANGED: force PH time for human-readable column
                 "timestamp_iso": datetime.fromtimestamp(int(updated_unix), tz=ZoneInfo("Asia/Manila")).isoformat(timespec="seconds"),
                 "timestamp_unix": int(updated_unix),
                 "station_id": station_id,
@@ -175,41 +114,21 @@ def _ensure_voucher_columns(df: pd.DataFrame) -> pd.DataFrame:
         df['redemption_timestamp'] = ""
     return df
 
-# ---------- Helpers for parity/export ----------
-def _coalesce(*vals):
-    """Return the first non-empty/non-NaN value."""
-    for v in vals:
-        if v is None:
-            continue
-        s = str(v).strip()
-        if s == "" or s.lower() == "nan":
-            continue
-        return v
-    return None
-
-def _fmt_money(v):
-    """Format numeric-like value to 2 decimals, empty if not a number."""
-    try:
-        return f"{float(v):.2f}"
-    except Exception:
-        return ""
-
+# >>> ADD: simple admin guard
 def _check_admin_key(req):
     key = req.args.get("key") or req.headers.get("X-Admin-Key")
     return key == ADMIN_KEY
 
-# =========================
-# Home / Dashboard
-# =========================
 @app.route('/')
 def home():
     return redirect("/form")
 
 @app.route('/form')
 def form():
-    # existing voucher table data
     try:
-        vouchers = repo.list_recent_vouchers(limit=50)
+        df = pd.read_csv('data/master_vouchers.csv', encoding='utf-8-sig')
+        df = df.sort_values(by='transaction_date', ascending=False).head(50)
+        vouchers = df.to_dict(orient='records')
         for row in vouchers:
             vid = str(row.get("voucher_id", "")).strip()
             png_1 = os.path.exists(f"static/qr_codes/{vid}.png")
@@ -218,23 +137,8 @@ def form():
     except Exception as e:
         print(f"⚠️ Error loading vouchers: {e}")
         vouchers = []
+    return render_template("form.html", today=date.today().isoformat(), vouchers=vouchers)
 
-    # NEW: supply station options + persisted selections for the PDF filter UI
-    stations = price_store.list_stations()  # [{id, name, brand, ...}]
-    stations = sorted(stations, key=lambda s: (s.get("brand",""), s.get("name","")))
-    cookie_val = request.cookies.get("pdf_station_ids", "")
-    selected_station_ids = [s for s in cookie_val.split(",") if s.strip()]
-
-    return render_template(
-        "form.html",
-        today=date.today().isoformat(),
-        vouchers=vouchers,
-        ops_token=OPS_TOKEN,
-        station_options=stations,
-        selected_station_ids=selected_station_ids,
-    )
-
-# -------------- (CSV upload route stays; you’ll remove visually in form.html soon) --------------
 @app.route('/upload_csv', methods=['POST'])
 def upload_csv():
     uploaded_file = request.files['csv_file']
@@ -259,17 +163,21 @@ def delete_png(voucher_id):
 
 @app.route('/redeem/<voucher_id>', methods=['GET'])
 def redeem_page(voucher_id):
-    row = repo.get_voucher(voucher_id)
-    if not row:
+    df = pd.read_csv('data/master_vouchers.csv', encoding='utf-8-sig')
+    df = _ensure_voucher_columns(df)
+    voucher = df[df['voucher_id'] == voucher_id]
+    if voucher.empty:
         return f"<h2>Voucher ID '{voucher_id}' not found.</h2>", 404
+    row = voucher.iloc[0].to_dict()
     return render_template('redeem.html', voucher=row)
 
 @app.route('/redeem/<voucher_id>', methods=['POST'])
 def mark_redeemed(voucher_id):
-    row = repo.get_voucher(voucher_id)
-    if not row:
+    df = pd.read_csv('data/master_vouchers.csv', encoding='utf-8-sig')
+    df = _ensure_voucher_columns(df)
+    if voucher_id not in df['voucher_id'].values:
         return f"<h2>Voucher ID '{voucher_id}' not found.</h2>", 404
-    current_status = str(row.get('status', '')).strip()
+    current_status = str(df.loc[df['voucher_id'] == voucher_id, 'status'].iloc[0]).strip()
     allowed = (current_status in ('', 'Unverified', 'Unredeemed'))
     if ENFORCE_PHASES:
         allowed = (current_status == 'Unredeemed')
@@ -277,7 +185,8 @@ def mark_redeemed(voucher_id):
         append_audit("redeem_denied", voucher_id, current_status, "Redeemed", f"enforce_phases={int(ENFORCE_PHASES)}")
         return f"<h2>Cannot redeem voucher while status is '{current_status or 'Unverified'}'.</h2>", 400
     ts = datetime.now().isoformat(timespec='seconds')
-    repo.set_status(voucher_id, 'Redeemed', ts)
+    df.loc[df['voucher_id'] == voucher_id, ['status','redemption_timestamp']] = ['Redeemed', ts]
+    df.to_csv('data/master_vouchers.csv', index=False, encoding='utf-8-sig')
     append_audit("redeem_success", voucher_id, current_status, "Redeemed", f"enforce_phases={int(ENFORCE_PHASES)}")
     return redirect(f"/redeem/{voucher_id}")
 
@@ -288,120 +197,20 @@ def ops_set_status(voucher_id, new_status):
     allowed_targets = {'Unverified', 'Unredeemed', 'Redeemed'}
     if new_status not in allowed_targets:
         return f"<h2>Invalid status '{new_status}'.</h2>", 400
-    row = repo.get_voucher(voucher_id)
-    if not row:
+    df = pd.read_csv('data/master_vouchers.csv', encoding='utf-8-sig')
+    df = _ensure_voucher_columns(df)
+    if voucher_id not in df['voucher_id'].values:
         return f"<h2>Voucher ID '{voucher_id}' not found.</h2>", 404
-    prev = str(row.get('status','')).strip()
-
+    prev = str(df.loc[df['voucher_id'] == voucher_id, 'status'].iloc[0]).strip()
     if new_status == 'Redeemed':
         ts = datetime.now().isoformat(timespec='seconds')
-        repo.set_status(voucher_id, 'Redeemed', ts)
-
-    elif new_status == 'Unredeemed':
-        # === Approve flow: compute & persist first, then (re)generate assets ===
-        from datetime import datetime as _dt
-
-        station_name = (row.get("station") or "").strip()
-        try:
-            amount = float(row.get("requested_amount_php") or 0)
-        except Exception:
-            amount = 0.0
-
-        # Prefer booking-time snapshots
-        try:
-            snap_price = float(row.get("price_snapshot_php_per_liter") or 0)
-        except Exception:
-            snap_price = 0.0
-        try:
-            snap_disc = float(row.get("discount_snapshot_php_per_liter") or 0)
-        except Exception:
-            snap_disc = 0.0
-
-        price_updated_at = int(row.get("price_snapshot_updated_at") or 0) if str(row.get("price_snapshot_updated_at") or "").isdigit() else 0
-        disc_captured_at = int(row.get("discount_snapshot_captured_at") or 0) if str(row.get("discount_snapshot_captured_at") or "").isdigit() else 0
-
-        # Fallbacks to current live values if snapshot missing/zero
-        price = snap_price
-        if price <= 0:
-            match = None
-            for s in price_store.list_stations():
-                if (s.get("name") or "").strip().lower() == station_name.lower():
-                    match = s
-                    break
-            price = float(match.get("price_php_per_liter") or 0) if match else 0.0
-            price_updated_at = int(match.get("updated_at") or 0) if match else 0
-
-        dpl = snap_disc
-        if dpl < 0:
-            dpl = 0.0
-        if dpl == 0.0:
-            try:
-                dpl_live = discount_store.get(station_name)
-                if dpl_live is not None:
-                    dpl = float(dpl_live)
-            except Exception:
-                pass
-            if not disc_captured_at:
-                disc_captured_at = int(_dt.now().timestamp())
-
-        # ---- Do the math (guard against zero price) ----
-        if amount > 0 and price > 0:
-            liters_requested = round(amount / price, 2)
-            discount_total = round(liters_requested * dpl, 2)
-            total_dispensed = round(amount + discount_total, 2)
-            liters_dispensed = round(liters_requested + (discount_total / price if price else 0), 2)
-        else:
-            liters_requested = 0.0
-            discount_total = 0.0
-            total_dispensed = amount
-            liters_dispensed = 0.0
-
-        # ---- Persist (repo.update_voucher_fields mirrors *_php to legacy columns) ----
-        repo.update_voucher_fields(voucher_id, {
-            # store the values we actually used
-            "live_price_php_per_liter": price,
-            "discount_per_liter": dpl,
-
-            # keep snapshots if they weren't already stored
-            "price_snapshot_php_per_liter": row.get("price_snapshot_php_per_liter") or price,
-            "price_snapshot_updated_at": row.get("price_snapshot_updated_at") or price_updated_at,
-            "discount_snapshot_php_per_liter": row.get("discount_snapshot_php_per_liter") or dpl,
-            "discount_snapshot_captured_at": row.get("discount_snapshot_captured_at") or disc_captured_at,
-
-            # computed totals
-            "liters_requested": liters_requested,
-            "discount_total_php": discount_total,
-            "total_dispensed_php": total_dispensed,
-            "liters_dispensed": liters_dispensed,
-
-            # bookkeeping
-            "computed_at": _dt.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
-        })
-
-        # ---- Reload fresh row & (re)generate assets *after* fields exist ----
-        try:
-            fresh = repo.get_voucher(voucher_id)
-            # If numbers are still missing, fail fast
-            if not fresh or not fresh.get("requested_amount_php") or price <= 0:
-                append_audit("ops_generate_assets_skip", voucher_id, prev, new_status, "missing amount/price after compute")
-                return "<h2>Cannot generate assets: missing amount/price after compute.</h2>", 400
-
-            generate_assets_for_row(fresh)
-        except Exception as gen_err:
-            append_audit("ops_generate_assets_error", voucher_id, prev, new_status, str(gen_err))
-            return f"<h2>Failed to generate voucher assets: {gen_err}</h2>", 500
-
-        # finally flip status to Unredeemed
-        repo.set_status(voucher_id, 'Unredeemed', "")
-
+        df.loc[df['voucher_id'] == voucher_id, ['status','redemption_timestamp']] = ['Redeemed', ts]
     else:
-        repo.set_status(voucher_id, new_status, "")
-
+        df.loc[df['voucher_id'] == voucher_id, 'status'] = new_status
+        df.loc[df['voucher_id'] == voucher_id, 'redemption_timestamp'] = ""
+    df.to_csv('data/master_vouchers.csv', index=False, encoding='utf-8-sig')
     append_audit("ops_set_status", voucher_id, prev, new_status, f"token_ok={int(bool(not OPS_TOKEN or request.args.get('token','')==OPS_TOKEN))}")
-
-    # Redirect back to caller, defaulting to /form
-    next_url = request.args.get("next") or request.referrer or url_for("form")
-    return redirect(next_url)
+    return redirect(f"/redeem/{voucher_id}")
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
@@ -493,98 +302,20 @@ def book():
                 'number_of_wheels': parts[4],
                 'fuel_type': parts[5]
             }
-
-        # ---- CAPTURE BOOKING-TIME SNAPSHOTS (price & discount) ----
-        station_name = (request.form.get('station') or '').strip()
-
-        # Robust normalizers: fix em/en dashes → '-', strip, lowercase, and slugify
-        import re as _re
-        def _norm_dashes(s: str) -> str:
-            s = str(s or '')
-            return s.replace('—', '-').replace('–', '-').strip().lower()
-
-        def _slug(s: str) -> str:
-            s = _norm_dashes(s)
-            s = _re.sub(r'[^a-z0-9\s-]', '', s)
-            s = _re.sub(r'[\s-]+', '_', s)
-            return s.strip('_')
-
-        # 1) live price snapshot (from price_store)
-        price_snapshot = 0.0
-        price_snapshot_updated_at = 0
-        try:
-            stations = price_store.list_stations()
-            match = None
-            target_norm = _norm_dashes(station_name)
-            target_slug = _slug(station_name)
-            for s in stations:
-                if _norm_dashes(s.get("id")) == target_norm:
-                    match = s; break
-            if match is None:
-                for s in stations:
-                    if _norm_dashes(s.get("name")) == target_norm:
-                        match = s; break
-            if match is None:
-                for s in stations:
-                    if _slug(s.get("name")) == target_slug:
-                        match = s; break
-            if match:
-                price_snapshot = float(match.get("price_php_per_liter") or 0)
-                price_snapshot_updated_at = int(match.get("updated_at") or 0)
-        except Exception as _e:
-            print("⚠️ price snapshot error:", _e)
-
-        # 2) live discount snapshot (from discount_store)
-        dpl_snapshot = 0.0
-        dpl_captured_at = int(datetime.utcnow().timestamp())
-        try:
-            val = discount_store.get(station_name)
-            if val is None:
-                all_discounts = discount_store.get_all() or {}
-                for k, v in all_discounts.items():
-                    if _norm_dashes(k) == target_norm or _slug(k) == target_slug:
-                        val = v; break
-            if val is not None:
-                dpl_snapshot = float(val)
-        except Exception as _e:
-            print("⚠️ discount snapshot error:", _e)
-
-        print(f"[BOOK] snapshots: {price_snapshot} {dpl_snapshot} {price_snapshot_updated_at} {dpl_captured_at} (station='{station_name}')")
-
         row = {
             'account_code': account_code,
-            'station': station_name,
-            'requested_amount_php': float(request.form.get('requested_amount_php') or 0),
+            'station': request.form.get('station'),
+            'requested_amount_php': request.form.get('requested_amount_php'),
             'refuel_datetime': request.form.get('refuel_datetime'),
-
             'driver_name': driver_data['driver_name'],
             'vehicle_plate': driver_data['vehicle_plate'],
             'truck_make': driver_data['truck_make'],
             'truck_model': driver_data['truck_model'],
             'number_of_wheels': driver_data['number_of_wheels'],
             'fuel_type': driver_data['fuel_type'],
-
             'contact_name': request.form.get('contact_number').split('–')[0].strip(),
-            'contact_number': request.form.get('contact_number').split('–')[-1].strip(),
-
-            # snapshots
-            'price_snapshot_php_per_liter': price_snapshot,
-            'price_snapshot_updated_at': price_snapshot_updated_at,
-            'discount_snapshot_php_per_liter': dpl_snapshot,
-            'discount_snapshot_captured_at': dpl_captured_at,
-
-            'status': 'Unverified',
-            'created_at': datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
-            'updated_at': datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
+            'contact_number': request.form.get('contact_number').split('–')[-1].strip()
         }
-
-        # save booking
-        try:
-            created = repo.create_unverified_booking(row)
-            print("[BOOK] created voucher:", created.get("voucher_id"))
-        except Exception as e:
-            print("⚠️ Failed to create Unverified booking:", e)
-
         preset_path = f"data/presets/{account_code}_presets.csv"
         existing = pd.read_csv(preset_path, encoding='utf-8-sig') if os.path.isfile(preset_path) else pd.DataFrame()
         if driver_data['vehicle_plate'] not in existing.get('vehicle_plate', []):
@@ -603,139 +334,56 @@ def discount_locator():
         stations = []
     return render_template('locator.html', stations=stations)
 
-# ======= SUPPLIER API (parity with CSV export) =======
 @app.route('/supplier-api/<voucher_id>', methods=['GET'])
 def supplier_api(voucher_id):
+    # Check token before proceeding
     token = request.args.get("token")
     if token != SUPPLIER_API_TOKEN:
         return {"error": "Unauthorized – Invalid or missing token."}, 403
 
     try:
-        r = repo.get_voucher(voucher_id)
-        if not r:
+        df = pd.read_csv('data/master_vouchers.csv', encoding='utf-8-sig')
+        print(df[['voucher_id', 'status']].tail(10))
+        row_df = df[df['voucher_id'] == voucher_id]
+        if row_df.empty:
             return {"error": f"Voucher ID '{voucher_id}' not found."}, 404
-
-        # Snapshot-first values with legacy fallback
-        req   = _coalesce(r.get("requested_amount_php"), 0) or 0
-        price = _coalesce(r.get("price_snapshot_php_per_liter"), r.get("live_price_php_per_liter"))
-        disc  = _coalesce(r.get("discount_snapshot_php_per_liter"), r.get("discount_per_liter"))
-
-        disc_total  = _coalesce(r.get("discount_total_php"),  r.get("discount_total"))
-        total_value = _coalesce(r.get("total_dispensed_php"), r.get("total_dispensed"))
-
-        liters_req = r.get("liters_requested")
-        try:
-            if (liters_req is None or str(liters_req).strip() == "") and price not in (None, "", "nan"):
-                p = float(price)
-                if p > 0:
-                    liters_req = round(float(req) / p, 2)
-        except Exception:
-            pass
-
-        liters_disp = r.get("liters_dispensed")
-        try:
-            if (liters_disp is None or str(liters_disp).strip() == "") and price not in (None, "", "nan"):
-                p = float(price)
-                dt = float(disc_total or 0)
-                if p > 0 and liters_req not in (None, "", "nan"):
-                    liters_disp = round(float(liters_req) + dt / p, 2)
-        except Exception:
-            pass
-
-        ts = r.get("refuel_datetime") or r.get("expected_refill_date") or r.get("transaction_date")
-        refuel_date_mnl = manila_time_filter(ts)
-
-        return {
-            "customer": "UniFleet",
-            "fuelProduct": "Diesel",
-            "invoice": r.get("voucher_id", ""),
-            "station": r.get("station", ""),
-            "pricePhpPerLiter": float(price) if price not in (None, "", "nan") else None,
-            "discountPhpPerLiter": float(disc) if disc not in (None, "", "nan") else None,
-            "requestedAmountPhp": float(req),
-            "freeFuelValuePhp": float(disc_total) if disc_total not in (None, "", "nan") else None,
-            "totalValuePhp": float(total_value) if total_value not in (None, "", "nan") else None,
-            "litersRequested": float(liters_req) if liters_req not in (None, "", "nan") else None,
-            "litersDispensed": float(liters_disp) if liters_disp not in (None, "", "nan") else None,
-            "driver": r.get("driver_name", ""),
-            "plate": r.get("vehicle_plate", ""),
-            "status": r.get("status", "") or "Unknown",
-            "refuelDate": refuel_date_mnl
+        row = row_df.iloc[0].to_dict()
+        response = {
+            "Customer": "UniFleet",
+            "Fuel Product": "Diesel",
+            "Qty": float(row.get("liters_requested", 0)),
+            "Driver": row.get("driver_name", ""),
+            "Plate": row.get("vehicle_plate", ""),
+            "Invoice": row.get("voucher_id", ""),
+            "Status": row.get("status", "Unknown")
         }
+        return response
     except Exception as e:
         return {"error": f"Unable to process request: {str(e)}"}, 500
 
-# ======= SUPPLIER CSV (parity with Supplier API) =======
 @app.route('/export_supplier_csv')
 def export_supplier_csv():
-    """
-    CSV parity with supplier API using snapshot math.
-    Columns:
-      Customer, Fuel Product, Invoice, Station,
-      Price (₱/L), Discount (₱/L), Requested (₱),
-      Free Fuel Value (₱), Total Value (₱),
-      Liters Requested, Liters Dispensed,
-      Driver, Plate, Status, Refuel Date
-    """
     try:
-        rows = repo.list_all_vouchers()
-        if not rows:
-            return "<h2>No vouchers to export.</h2>", 200
-
-        out_rows = []
-        for r in rows:
-            vid   = str(r.get("voucher_id", "")).strip()
-            stat  = r.get("station", "") or ""
-            req   = _coalesce(r.get("requested_amount_php"), 0) or 0
-
-            price = _coalesce(r.get("price_snapshot_php_per_liter"), r.get("live_price_php_per_liter"))
-            disc  = _coalesce(r.get("discount_snapshot_php_per_liter"), r.get("discount_per_liter"))
-
-            disc_total  = _coalesce(r.get("discount_total_php"),  r.get("discount_total"))
-            total_value = _coalesce(r.get("total_dispensed_php"), r.get("total_dispensed"))
-
-            liters_req = r.get("liters_requested")
-            try:
-                if (liters_req is None or str(liters_req).strip() == "") and price not in (None, "", "nan"):
-                    p = float(price)
-                    if p > 0:
-                        liters_req = round(float(req) / p, 2)
-            except Exception:
-                pass
-
-            liters_disp = r.get("liters_dispensed")
-            try:
-                if (liters_disp is None or str(liters_disp).strip() == "") and price not in (None, "", "nan"):
-                    p = float(price)
-                    dt = float(disc_total or 0)
-                    if p > 0 and liters_req not in (None, "", "nan"):
-                        liters_disp = round(float(liters_req) + dt / p, 2)
-            except Exception:
-                pass
-
-            ts = r.get("refuel_datetime") or r.get("expected_refill_date") or r.get("transaction_date")
-            refuel_date_mnl = manila_time_filter(ts)
-
-            out_rows.append({
-                "Customer": "UniFleet",
-                "Fuel Product": "Diesel",
-                "Invoice": vid,
-                "Station": stat,
-                "Price (₱/L)": _fmt_money(price),
-                "Discount (₱/L)": _fmt_money(disc),
-                "Requested (₱)": _fmt_money(req),
-                "Free Fuel Value (₱)": _fmt_money(disc_total),
-                "Total Value (₱)": _fmt_money(total_value),
-                "Liters Requested": _fmt_money(liters_req),
-                "Liters Dispensed": _fmt_money(liters_disp),
-                "Driver": r.get("driver_name", "") or "",
-                "Plate": r.get("vehicle_plate", "") or "",
-                "Status": r.get("status", "") or "",
-                "Refuel Date": refuel_date_mnl,
-            })
-
+        df = pd.read_csv('data/master_vouchers.csv', encoding='utf-8-sig')
+        df = _ensure_voucher_columns(df)
+        export_df = df.copy()
+        export_df = export_df[[
+            'voucher_id',
+            'driver_name',
+            'vehicle_plate',
+            'liters_requested',
+            'status'
+        ]].rename(columns={
+            'voucher_id': 'Invoice',
+            'driver_name': 'Driver',
+            'vehicle_plate': 'Plate',
+            'liters_requested': 'Qty',
+            'status': 'Status'
+        })
+        export_df.insert(0, 'Customer', 'UniFleet')
+        export_df.insert(2, 'Fuel Product', 'Diesel')
         export_path = 'data/supplier_export.csv'
-        pd.DataFrame(out_rows).to_csv(export_path, index=False, encoding='utf-8-sig')
+        export_df.to_csv(export_path, index=False, encoding='utf-8-sig')
         return send_file(export_path, as_attachment=True)
     except Exception as e:
         return f"<h2>Failed to export supplier CSV: {str(e)}</h2>", 500
@@ -743,16 +391,13 @@ def export_supplier_csv():
 # =========================
 # Admin: Live Prices (pre-DB)
 # =========================
-discount_store = DiscountStore()
-
 @app.route("/admin/prices")
 def admin_prices():
     if not _check_admin_key(request):
         return abort(403)
     stations = price_store.list_stations()
     stations = sorted(stations, key=lambda s: (s.get("brand",""), s.get("name","")))
-    discounts = discount_store.get_all()
-    return render_template("admin_prices.html", stations=stations, discounts=discounts)
+    return render_template("admin_prices.html", stations=stations)
 
 @app.route("/admin/prices/update", methods=["POST"])
 def admin_prices_update():
@@ -763,11 +408,14 @@ def admin_prices_update():
         station_id = str(payload.get("station_id", "")).strip()
         new_price = float(payload.get("price", 0))
 
+        # capture old price before change
         before = price_store.get_station(station_id) or {}
         old_price = before.get("price_php_per_liter")
 
+        # perform update (sets updated_at = epoch seconds)
         updated = price_store.set_price(station_id, new_price)
 
+        # append a CSV audit row
         append_price_history(
             station_id=station_id,
             old_price=old_price,
@@ -788,206 +436,81 @@ def admin_prices_update():
     except Exception:
         return jsonify({"ok": False, "error": "server_error"}), 500
 
-# Read-only API for previews
+# Read-only API (handy for previews & step #5)
 @app.route("/api/v1/prices", methods=["GET"])
 def api_prices_list():
     stations = price_store.list_stations()
     return jsonify({"stations": stations})
 
 # =========================
-# Discounts
+# Price Preview API (always uses stored price; flags stale)
 # =========================
-@app.route("/admin/discounts/update", methods=["POST"])
-def admin_discounts_update():
-    if not _check_admin_key(request):
-        return abort(403)
-
-    key = request.args.get("key", "").strip()
-    station = (request.form.get("station") or "").strip()
-    raw_value = (request.form.get("discount_per_liter") or "").strip()
-
-    def _back():
-        target = url_for("admin_prices")
-        if key:
-            target = f"{target}?key={key}"
-        return redirect(target)
-
-    if not station:
-        flash("Station is required.", "error")
-        return _back()
-
-    if raw_value == "":
-        flash(f"No changes saved for “{station}”.", "info")
-        return _back()
-
-    try:
-        value = float(raw_value)
-    except ValueError:
-        flash("Discount must be a number.", "error")
-        return _back()
-
-    if value < 0 or value > 15:
-        flash("Discount must be between 0 and 15 PHP/L.", "error")
-        return _back()
-
-    try:
-        discount_store.set(station, value, actor="admin", reason="manual update")
-        flash(f"Saved discount {value:.2f} PHP/L for “{station}”.", "success")
-    except DiscountValueError as e:
-        flash(str(e), "error")
-    except Exception as e:
-        flash(f"Failed to save discount: {e}", "error")
-
-    return _back()
-
-@app.route("/api/v1/discounts", methods=["GET"])
-def api_discounts_list():
-    try:
-        return jsonify({"discounts": discount_store.get_all()})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-# =========================
-# Price Preview API
-# =========================
-@app.route("/api/v1/price_preview", methods=["GET"])
-def api_price_preview():
+@app.route("/api/v1/price_preview", methods=["GET"])  # [1]
+def api_price_preview():  # [2]
     """
-    Query params:
-      - station: station id OR station name (exact match)
-      - amount: PHP amount (float)
-      - discount_per_liter: optional, default 0 (float)
-    """
-    station_q = (request.args.get("station") or "").strip()
-    try:
-        amount = float(request.args.get("amount", "0"))
-    except ValueError:
-        return jsonify({"ok": False, "error": "invalid amount"}), 400
-    try:
-        dpl = float(request.args.get("discount_per_liter", "0") or 0)
-    except ValueError:
-        dpl = 0.0
+    Query params:  # [3]
+      - station: station id OR station name (exact match)  # [4]
+      - amount: PHP amount (float)  # [5]
+      - discount_per_liter: optional, default 0 (float)  # [6]
+    """  # [7]
+    station_q = (request.args.get("station") or "").strip()  # [8]
+    try:  # [9]
+        amount = float(request.args.get("amount", "0"))  # [10]
+    except ValueError:  # [11]
+        return jsonify({"ok": False, "error": "invalid amount"}), 400  # [12]
+    try:  # [13]
+        dpl = float(request.args.get("discount_per_liter", "0") or 0)  # [14]
+    except ValueError:  # [15]
+        dpl = 0.0  # [16]
 
-    def _norm(s): return str(s or "").strip().lower()
-    stations = price_store.list_stations()
-    match = None
-    for s in stations:
-        if _norm(s.get("id")) == _norm(station_q):
-            match = s
-            break
-    if match is None:
-        for s in stations:
-            if _norm(s.get("name")) == _norm(station_q):
-                match = s
-                break
-    if match is None:
-        return jsonify({"ok": False, "error": "station not found"}), 404
+    # Resolve station by id, then by name (case-insensitive)  # [17]
+    def _norm(s): return str(s or "").strip().lower()  # [18]
+    stations = price_store.list_stations()  # [19]
+    match = None  # [20]
+    for s in stations:  # [21]
+        if _norm(s.get("id")) == _norm(station_q):  # [22]
+            match = s; break  # [23]
+    if match is None:  # [24]
+        for s in stations:  # [25]
+            if _norm(s.get("name")) == _norm(station_q):  # [26]
+                match = s; break  # [27]
+    if match is None:  # [28]
+        return jsonify({"ok": False, "error": "station not found"}), 404  # [29]
 
-    try:
-        price = float(match.get("price_php_per_liter") or 0)
-    except Exception:
-        price = 0.0
-    ts = int(match.get("updated_at", 0) or 0)
+    # Always use stored price; compute a simple "stale" flag (>= 7 days)  # [30]
+    try:  # [31]
+        price = float(match.get("price_php_per_liter") or 0)  # [32]
+    except Exception:  # [33]
+        price = 0.0  # [34]
+    ts = int(match.get("updated_at", 0) or 0)  # [35]
 
-    if amount <= 0 or price <= 0:
-        return jsonify({"ok": False, "error": "invalid amount or price"}), 400
+    if amount <= 0 or price <= 0:  # [36]
+        return jsonify({"ok": False, "error": "invalid amount or price"}), 400  # [37]
 
-    liters_requested = round(amount / price, 2)
-    discount_total = round(liters_requested * dpl, 2)
-    total_dispensed = round(amount + discount_total, 2)
-    liters_dispensed = round(liters_requested + (discount_total / price if price else 0), 2)
+    liters_requested = round(amount / price, 2)  # [38]
+    discount_total = round(liters_requested * dpl, 2)  # [39]
+    total_dispensed = round(amount + discount_total, 2)  # [40]
+    liters_dispensed = round(liters_requested + (discount_total / price if price else 0), 2)  # [41]
 
-    is_stale = False
-    if ts <= 0:
-        is_stale = True
-    else:
-        now = int(datetime.now().timestamp())
-        is_stale = (now - ts) >= 7 * 24 * 60 * 60
+    # Informational stale flag (no blocking)  # [42]
+    is_stale = False  # [43]
+    if ts <= 0:  # [44]
+        is_stale = True  # [45]
+    else:  # [46]
+        now = int(datetime.now().timestamp())  # [47]
+        is_stale = (now - ts) >= 7 * 24 * 60 * 60  # [48]
 
-    return jsonify({
-        "ok": True,
-        "station_id": match.get("id"),
-        "station_name": match.get("name"),
-        "price_php_per_liter": price,
-        "price_updated_at": ts,
-        "price_is_stale": is_stale,
-        "requested_amount_php": amount,
-        "discount_per_liter": dpl,
-        "liters_requested": liters_requested,
-        "discount_total": discount_total,
-        "total_dispensed": total_dispensed,
-        "liters_dispensed": liters_dispensed
-    })
-
-# =========================
-# PDF Preferences + Export
-# =========================
-@app.route("/pdf/prefs", methods=["POST"])
-def save_pdf_prefs():
-    """
-    Persist selected station ids for the PDF (checkboxes on /form).
-    Expects one or more form fields named 'station_id'.
-    Stores in a cookie 'pdf_station_ids' comma-separated for ~6 months.
-    """
-    station_ids = request.form.getlist("station_id")
-    station_ids = [s.strip() for s in station_ids if s.strip()]
-    cookie_val = ",".join(station_ids)
-    resp = make_response(redirect(url_for("form")))
-    # 6 months expiry
-    resp.set_cookie("pdf_station_ids", cookie_val, max_age=60*60*24*30*6, samesite="Lax")
-    return resp
-
-@app.route("/supplier-sheet.pdf", methods=["GET"])
-def supplier_sheet_pdf():
-    """
-    Build and return the supplier PDF.
-    Station filter resolves as:
-      1) any ?station=<id> query params (one or many),
-      2) else cookie 'pdf_station_ids',
-      3) else all stations.
-    """
-    # Guard: if PDF builder is missing, don’t crash — show a clear error
-    if build_supplier_pdf is None:
-        return (
-            f"<h2>PDF generator not available.</h2>"
-            f"<p>Import error: {_PDF_IMPORT_ERROR}</p>"
-            f"<p>Ensure <code>report_pdf.py</code> defines "
-            f"<code>build_supplier_pdf(vouchers, target_station_ids, stations, logo_path)</code>.</p>",
-            500,
-        )
-
-    # 1) explicit query selection
-    query_station_ids = request.args.getlist("station")
-    query_station_ids = [s.strip() for s in query_station_ids if s.strip()]
-
-    # 2) cookie fallback
-    cookie_val = request.cookies.get("pdf_station_ids", "")
-    cookie_station_ids = [s for s in cookie_val.split(",") if s.strip()]
-
-    # 3) default to all
-    all_stations = price_store.list_stations()
-    all_ids = [s.get("id") for s in all_stations if s.get("id")]
-
-    selected_ids = query_station_ids or cookie_station_ids or all_ids
-
-    # Build PDF in-memory
-    vouchers = repo.list_all_vouchers()
-    pdf_bytes = build_supplier_pdf(
-        vouchers=vouchers,
-        target_station_ids=set(selected_ids),
-        stations=all_stations,
-        logo_path="static/UniFleet Logo.png",
-    )
-    return send_file(
-        io.BytesIO(pdf_bytes),
-        mimetype="application/pdf",
-        as_attachment=True,
-        download_name="UniFleet_Offline_Voucher_List.pdf",
-    )
-
-# =========================
-# Entrypoint
-# =========================
-if __name__ == "__main__":
-    # Useful for local debugging
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    return jsonify({  # [49]
+        "ok": True,  # [50]
+        "station_id": match.get("id"),  # [51]
+        "station_name": match.get("name"),  # [52]
+        "price_php_per_liter": price,  # [53]
+        "price_updated_at": ts,  # [54]
+        "price_is_stale": is_stale,  # [55]
+        "requested_amount_php": amount,  # [56]
+        "discount_per_liter": dpl,  # [57]
+        "liters_requested": liters_requested,  # [58]
+        "discount_total": discount_total,  # [59]
+        "total_dispensed": total_dispensed,  # [60]
+        "liters_dispensed": liters_dispensed  # [61]
+    })  # [62]

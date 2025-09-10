@@ -1,0 +1,5 @@
+﻿voucher_id,station,requested_amount_php,liters_requested,transaction_date,expected_refill_date,live_price_php_per_liter,discount_per_liter,discount_total,total_dispensed,liters_dispensed,driver_name,vehicle_plate,truck_make,truck_model,number_of_wheels,status,redemption_timestamp
+UF2025080218252200,Clean Fuel QC,5000,97.47,7/17/25,7/18/25,51.3,2.5,243.68,5243.68,102.22,John Smith,XYZ123,Mitsubishi,Montero,10,Redeemed,2025-08-27T06:53:51
+UF2025080218252201,Clean Fuel QC,7500,148.22,7/19/25,7/19/25,50.6,2.5,370.55,7870.55,155.54,Randy Ortigas,ABC678,Toyota,Tundra,8,Redeemed,
+UF2025080218320000,Clean Fuel QC,5000,97.47,7/17/25,7/18/25,51.3,2.5,243.68,5243.68,102.22,John Smith,XYZ123,Mitsubishi,Montero,10,Unredeemed,
+UF2025080218320001,Clean Fuel QC,7500,148.22,7/19/25,7/19/25,50.6,2.5,370.55,7870.55,155.54,Randy Ortigas,ABC678,Toyota,Tundra,8,Redeemed,

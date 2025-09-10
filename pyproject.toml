@@ -11,8 +11,6 @@ gunicorn = "^21.2.0"
 pandas = "^2.3.1"
 qrcode = "^8.2"
 imgkit = "^1.2.3"
-pytz = "^2025.2"
-reportlab = "^4.2.2"
 
 [tool.pyright]
 # https://github.com/microsoft/pyright/blob/main/docs/configuration.md

@@ -1,0 +1,84 @@
+{
+  "stations": [
+    {
+      "id": "cleanfuel_valenzuela",
+      "brand": "Cleanfuel",
+      "name": "Cleanfuel – Valenzuela",
+      "location": "NLEX Southbound",
+      "price_php_per_liter": 63.0,
+      "updated_at": 1756655102
+    },
+    {
+      "id": "unioil_mandaluyong",
+      "brand": "Unioil",
+      "name": "Unioil – Mandaluyong",
+      "location": "EDSA",
+      "price_php_per_liter": 59.1,
+      "updated_at": 0
+    },
+    {
+      "id": "seaoil_bicutan",
+      "brand": "Seaoil",
+      "name": "Seaoil – Bicutan",
+      "location": "SLEX Northbound",
+      "price_php_per_liter": 58.9,
+      "updated_at": 0
+    },
+    {
+      "id": "ecooil_qc",
+      "brand": "EcoOil",
+      "name": "EcoOil – QC",
+      "location": "Commonwealth",
+      "price_php_per_liter": 58.3,
+      "updated_at": 0
+    },
+    {
+      "id": "maximumfuel_val",
+      "brand": "Maximum Fuel",
+      "name": "Maximum Fuel – Valenzuela",
+      "location": "Punturin",
+      "price_php_per_liter": 57.95,
+      "updated_at": 0
+    },
+    {
+      "id": "phoenix_meyc",
+      "brand": "Phoenix",
+      "name": "Phoenix – Meycauayan",
+      "location": "NLEX",
+      "price_php_per_liter": 58.2,
+      "updated_at": 0
+    },
+    {
+      "id": "petro_gsanj",
+      "brand": "Petro G",
+      "name": "Petro G – San Jose",
+      "location": "Bulacan",
+      "price_php_per_liter": 58.0,
+      "updated_at": 0
+    },
+    {
+      "id": "gazz_binan",
+      "brand": "Gazz",
+      "name": "Gazz – Biñan",
+      "location": "SLEX Southbound",
+      "price_php_per_liter": 57.8,
+      "updated_at": 0
+    },
+    {
+      "id": "filoil_stamesa",
+      "brand": "FilOil",
+      "name": "FilOil – Sta. Mesa",
+      "location": "Manila",
+      "price_php_per_liter": 59.4,
+      "updated_at": 0
+    },
+    {
+      "id": "petron_port",
+      "brand": "Petron",
+      "name": "Petron – Port Area",
+      "location": "Port of Manila",
+      "price_php_per_liter": 59.9,
+      "updated_at": 0
+    }
+  ]
+}

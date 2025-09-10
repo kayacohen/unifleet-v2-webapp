@@ -6,7 +6,7 @@ hidden = [".pythonlibs"]
 
 [nix]
 channel = "stable-24_05"
-packages = ["freetype", "glibcLocales"]
+packages = ["glibcLocales"]
 
 [deployment]
 run =  ["gunicorn", "--bind", "0.0.0.0:5000", "main:app"]
@@ -15,6 +15,3 @@ deploymentTarget = "cloudrun"
 [[ports]]
 localPort = 5000
 externalPort = 80
-
-[agent]
-expertMode = true

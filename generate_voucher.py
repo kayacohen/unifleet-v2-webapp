@@ -1,18 +1,17 @@
 import os
-import time
+import time  # <<< ADDED
 from datetime import datetime
 import pandas as pd
 import qrcode
 from PIL import Image, ImageDraw, ImageFont
 
-import price_store  # read live prices from station_prices.json
-from persistence import get_repo  # repo abstraction (CSV or DB)
+import price_store  # <<< ADDED: read live prices from station_prices.json
 
 # File paths
-MASTER_VOUCHERS = 'data/master_vouchers.csv'  # retained for compatibility if running in CSV mode
+MASTER_VOUCHERS = 'data/master_vouchers.csv'
 QR_OUTPUT_DIR = 'static/qr_codes/'
-LOGO_PATH = 'static/UniFleet Logo.png'
-TEMPLATE_PATH = 'static/BRANDED VOUCHER TEMPLATE - UNIFLEET.png'
+LOGO_PATH = 'static/UniFleet Logo.png'  # ✅ Branded logo
+TEMPLATE_PATH = 'static/BRANDED VOUCHER TEMPLATE - UNIFLEET.png'  # ✅ Branded PNG template
 REQUIRED_COLUMNS = [
     'voucher_id', 'station', 'requested_amount_php', 'liters_requested',
     'transaction_date', 'expected_refill_date', 'live_price_php_per_liter',
@@ -25,14 +24,8 @@ BASE_URL = "https://c62ded05-595f-42d6-b59c-55cd5cb986e6-00-287s4ts5huint.sisko.
 
 os.makedirs(QR_OUTPUT_DIR, exist_ok=True)
 
-# Persistence selector
-PERSISTENCE_BACKEND = os.environ.get("PERSISTENCE_BACKEND", "csv").lower()
-_gen_repo = get_repo(PERSISTENCE_BACKEND)
-
-
 def _norm(s):
     return str(s or "").strip().lower()
-
 
 def _resolve_live_price(station_field):
     """
@@ -44,6 +37,7 @@ def _resolve_live_price(station_field):
     stations = price_store.list_stations()
     sf = _norm(station_field)
 
+    # id match
     for s in stations:
         if _norm(s.get("id")) == sf:
             return {
@@ -53,6 +47,7 @@ def _resolve_live_price(station_field):
                 "station_name": s.get("name")
             }
 
+    # name match
     for s in stations:
         if _norm(s.get("name")) == sf:
             return {
@@ -63,7 +58,6 @@ def _resolve_live_price(station_field):
             }
 
     return {"price": None, "updated_at": 0, "station_id": None, "station_name": None}
-
 
 def generate_qr_image(voucher_data, row_index):
     voucher_id = str(voucher_data['voucher_id']).strip()
@@ -89,7 +83,6 @@ def generate_qr_image(voucher_data, row_index):
     final_img.save(filepath)
     print(f"✅ Saved QR voucher: {filepath}")
 
-
 def generate_branded_image(voucher_data):
     voucher_id = str(voucher_data['voucher_id']).strip()
     qr_path = os.path.join(QR_OUTPUT_DIR, f"{voucher_id}.png")
@@ -98,14 +91,14 @@ def generate_branded_image(voucher_data):
         print(f"⚠️ QR not found for {voucher_id}. Skipping branded image.")
         return
 
-    template_path = TEMPLATE_PATH
+    template_path = 'static/BRANDED VOUCHER TEMPLATE - UNIFLEET.png'
     if not os.path.exists(template_path):
         print(f"⚠️ Template not found: {template_path}")
         return
 
     try:
         base = Image.open(template_path).convert("RGB")
-        qr = Image.open(qr_path).resize((750, 750))
+        qr = Image.open(qr_path).resize((750, 750))  # ✅ Larger QR
 
         draw = ImageDraw.Draw(base)
         try:
@@ -115,13 +108,15 @@ def generate_branded_image(voucher_data):
             print("⚠️ Failed to load Roboto fonts. Using default.")
             font_label = font_value = ImageFont.load_default()
 
+        # Paste QR – slightly lower to center visually
         qr_x = (base.width - qr.width) // 2
-        qr_y = 525
+        qr_y = 525  # ✅ Moved down
         base.paste(qr, (qr_x, qr_y))
 
+        # Text content
         y = qr_y + qr.height + 70
         left_margin = 90
-        spacing = 70
+        spacing = 70  # Pixel distance between lines
 
         entries = [
             ("PHP Value:", f"₱{voucher_data.get('total_dispensed', '')} (Includes ₱{voucher_data.get('requested_amount_php', '')} Prepaid + ₱{voucher_data.get('discount_total', '')} FREE)"),
@@ -134,11 +129,7 @@ def generate_branded_image(voucher_data):
 
         for label, value in entries:
             draw.text((left_margin, y), label, fill="black", font=font_label)
-            try:
-                label_width = draw.textlength(label, font=font_label)
-            except Exception:
-                # Fallback for older Pillow versions
-                label_width = draw.textbbox((0, 0), label, font=font_label)[2]
+            label_width = draw.textlength(label, font=font_label)
             draw.text((left_margin + label_width + 20, y), value, fill="black", font=font_value)
             y += spacing
 
@@ -149,16 +140,7 @@ def generate_branded_image(voucher_data):
     except Exception as e:
         print(f"❌ Failed to generate branded image for {voucher_id}: {e}")
 
-
 def append_and_generate_vouchers(csv_path):
-    """
-    Request-time behavior:
-      - Parse and normalize uploaded CSV
-      - Compute any missing numeric fields using live price when possible
-      - Default status to 'Unverified'
-      - Append rows via repo (CSV or DB depending on env)
-      - DO NOT generate any QR/PNG here
-    """
     df = pd.read_csv(csv_path, encoding='utf-8-sig')
 
     missing = [col for col in REQUIRED_COLUMNS if col not in df.columns]
@@ -175,19 +157,25 @@ def append_and_generate_vouchers(csv_path):
         if voucher_id == 'nan' or voucher_id == '':
             df.at[idx, 'voucher_id'] = f"UF{timestamp}{idx:02d}"
 
+        # Resolve the live price from station_prices.json (always use it if present > 0)
         station_field = row.get('station', '')
         lp = _resolve_live_price(station_field)
 
+        # Decide which price to use:
+        # 1) JSON price if present and > 0
+        # 2) fall back to CSV's live_price_php_per_liter (if provided)
         calc_price = None
         try:
             if lp['price'] is not None and float(lp['price']) > 0:
                 calc_price = float(lp['price'])
+                # write back for reproducibility so row is self-contained
                 df.at[idx, 'live_price_php_per_liter'] = round(calc_price, 2)
             else:
                 calc_price = float(row['live_price_php_per_liter'])
         except Exception:
             calc_price = None
 
+        # Fill missing calculations using calc_price (if available)
         if calc_price is None or calc_price <= 0:
             print(f"⚠️ No usable price for station '{station_field}' on row {idx}; skipping auto-calcs.")
         else:
@@ -222,51 +210,28 @@ def append_and_generate_vouchers(csv_path):
             except Exception:
                 pass
 
+        # Keep your existing default exactly as-is
         if pd.isna(row['status']) or str(row['status']).strip() == '':
-            df.at[idx, 'status'] = 'Unverified'  # approval-gated flow
+            df.at[idx, 'status'] = 'unredeemed'
 
-        if pd.isna(row['redemption_timestamp']) or str(row['redemption_timestamp']).strip() == '':
-            df.at[idx, 'redemption_timestamp'] = ''
+    if os.path.exists(MASTER_VOUCHERS):
+        existing_df = pd.read_csv(MASTER_VOUCHERS, encoding='utf-8-sig')
+        updated_df = pd.concat([existing_df, df], ignore_index=True)
+        updated_df.to_csv(MASTER_VOUCHERS, index=False, encoding='utf-8-sig')
+    else:
+        df.to_csv(MASTER_VOUCHERS, index=False, encoding='utf-8-sig')
 
-    rows_to_add = df.to_dict(orient='records')
-    _gen_repo.append_vouchers(rows_to_add)
-    print(f"📦 Appended {len(rows_to_add)} rows to {'database' if PERSISTENCE_BACKEND=='db' else 'master_vouchers.csv'} as Unverified")
+    print(f"📦 Appended {len(df)} rows to master_vouchers.csv")
+
+    for idx, row in df.iterrows():
+        generate_qr_image(row, idx)
+        generate_branded_image(row)  # 🆕
 
     try:
         os.remove(csv_path)
         print(f"🩹 Removed temporary upload file: {csv_path}")
     except Exception as e:
         print(f"⚠️ Could not remove {csv_path}: {e}")
-
-    # IMPORTANT: no QR/PNG generation here (approval will generate assets)
-    return
-
-
-# ===== Approval-time asset generation (used by ops approval path) =====
-def generate_assets_for_row(row: dict) -> None:
-    """
-    Idempotent: creates QR (/redeem/<voucher_id>) and branded PNG if missing.
-    Does NOT write back to DB/CSV. Safe to call multiple times.
-    """
-    vid = str(row.get("voucher_id", "")).strip()
-    if not vid:
-        raise ValueError("Missing voucher_id for asset generation")
-
-    qr_file = os.path.join(QR_OUTPUT_DIR, f"{vid}.png")
-    official_png = os.path.join(QR_OUTPUT_DIR, f"{vid}_Official.png")
-
-    if not os.path.exists(qr_file):
-        try:
-            generate_qr_image(row, 0)
-        except Exception as e:
-            raise RuntimeError(f"QR generation failed for {vid}: {e}")
-
-    if not os.path.exists(official_png):
-        try:
-            generate_branded_image(row)
-        except Exception as e:
-            raise RuntimeError(f"Branded PNG generation failed for {vid}: {e}")
-
 
 if __name__ == "__main__":
     upload_path = "data/unifleet_web_redemptions_input.csv"
