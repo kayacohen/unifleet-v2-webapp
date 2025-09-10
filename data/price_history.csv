@@ -1,6 +1,0 @@
-﻿timestamp_iso,timestamp_unix,station_id,old_price,new_price,actor_ip,user_agent
-2025-08-31T15:23:30,1756653810,cleanfuel_valenzuela,58.6,58.7,"76.216.16.115, 10.84.7.3","Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36"
-2025-08-31T15:23:41,1756653821,cleanfuel_valenzuela,58.7,58.9,"76.216.16.115, 10.84.7.3","Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36"
-2025-08-31T23:37:02+08:00,1756654622,cleanfuel_valenzuela,58.9,59.0,"76.216.16.115, 10.84.4.26","Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36"
-2025-08-31T23:37:20+08:00,1756654640,cleanfuel_valenzuela,59.0,60.0,"76.216.16.115, 10.84.4.26","Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36"
-2025-08-31T23:45:02+08:00,1756655102,cleanfuel_valenzuela,60.0,63.0,"76.216.16.115, 10.84.4.26","Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36"
