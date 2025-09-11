@@ -70,11 +70,11 @@ def build_supplier_pdf(*, vouchers, target_station_ids, stations, logo_path=None
     Supplier Sheet (A4 landscape)
 
     Columns:
-      - Station
+      - Station (Expected)
       - Amount (PHP)
       - Driver name
       - Plate
-      - Voucher ID
+      - Voucher ID (Unredeemed)
       - Name / Signature
     """
     # Selected stations (match by station name best-effort)
@@ -132,7 +132,7 @@ def build_supplier_pdf(*, vouchers, target_station_ids, stations, logo_path=None
     faq_a = ParagraphStyle("FAQA", parent=styles["BodyText"], leading=14, spaceAfter=8)
 
     # Title/subtitle (left)
-    y = _draw_paragraph(c, "UniFleet – Unredeemed Diesel Refuel Vouchers (Offline Version)", title_style, x_margin, y, page_w - 2*x_margin)
+    y = _draw_paragraph(c, "UniFleet – Diesel Refuel Vouchers (Offline Version)", title_style, x_margin, y, page_w - 2*x_margin)
     ts_mnl = datetime.now(ZoneInfo("Asia/Manila")).strftime("%Y-%m-%d %H:%M")
     y = _draw_paragraph(c, f"Generated: {ts_mnl}", subtitle_style, x_margin, y, page_w - 2*x_margin)
     y -= 6 * mm
@@ -150,7 +150,7 @@ def build_supplier_pdf(*, vouchers, target_station_ids, stations, logo_path=None
             pass
 
     # Table (adjusted widths & row height via padding)
-    header = ["Station", "Amount (PHP)", "Driver name", "Plate", "Voucher ID", "Name / Signature"]
+    header = ["Station (Expected)", "Amount (PHP)", "Driver name", "Plate", "Voucher ID (Unredeemed)", "Name / Signature"]
     data = [header]
     data.extend(rows if rows else [["—"] * len(header)])
 
