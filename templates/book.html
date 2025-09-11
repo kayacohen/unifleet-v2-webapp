@@ -160,8 +160,19 @@
       </details>
 
       <label for="refuel_datetime">Refuel Date & Time</label>
-      <input type="datetime-local" name="refuel_datetime" class="full-width-input" required
-      value="{{ form_values.refuel_datetime if form_values else '' }}">
+      <input
+        type="datetime-local"
+        name="refuel_datetime"
+        id="refuel_datetime"
+        class="full-width-input"
+        required
+        {% if min_refuel %}min="{{ min_refuel }}"{% endif %}
+        value="{{ form_values.refuel_datetime if form_values and form_values.refuel_datetime else '' }}"
+      >
+      <div class="note">
+        Must be at least <strong>24 hours</strong> from now (Asia/Manila).
+      </div>
+
 
       <hr style="margin: 2rem 0;">
 
