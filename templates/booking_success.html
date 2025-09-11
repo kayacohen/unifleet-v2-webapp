@@ -114,35 +114,16 @@
 
       <div class="payment-instructions">
         <h2 style="margin-top:0; color:#0054a6;">Next Step: Send Payment & Forward Confirmation Screenshot to 0945-149-2369</h2>
-        <p class="amount-due">Amount Due: ₱{{ due_amount }}</p>
+        <p class="amount-due">Amount Due: ₱{{ due_amount }} (InstaPay or PESONet)</p>
 
         <div class="payment-box">
-          <h3>🏦 {{ payment_info.unionbank.label }}</h3>
-          <p><strong>Account Name:</strong> {{ payment_info.unionbank.account_name }}</p>
+          <h3>🏦 {{ payment_info.gotyme.label }}</h3>
+          <p><strong>Account Name:</strong> {{ payment_info.gotyme.account_name }}</p>
           <p>
             <strong>Account Number:</strong>
-            <span id="union-account">{{ payment_info.unionbank.account_number }}</span>
-          </p>
-          {% if payment_info.unionbank.routing_number %}
-          <p>
-            <strong>Routing Number:</strong>
-            <span id="union-routing">{{ payment_info.unionbank.routing_number }}</span>
-          </p>
-          {% endif %}
-
-        </div>
-
-        <div class="payment-box">
-          <h3>📱 {{ payment_info.gcash.label }}</h3>
-          <p><strong>Account Name:</strong> {{ payment_info.gcash.account_name }}</p>
-          <p>
-            <strong>Number:</strong>
-            <span id="gcash-account">{{ payment_info.gcash.account_number }}</span>
+            <span id="gotyme-account">{{ payment_info.gotyme.account_number }}</span>
           </p>
         </div>
-
-        <p class="fee-note">{{ payment_info.fee_note }}</p>
-      </div>
 
       <div class="btn-row">
         <a href="{{ url_for('book') }}" class="btn btn-primary">← Make another booking</a>
