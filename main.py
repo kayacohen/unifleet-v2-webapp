@@ -442,13 +442,16 @@ def test_success():
 def book():
     customers_path = 'data/customers.csv'
     booking_path = 'data/requested_vouchers.csv'
-    stations_path = 'data/stations.csv'
     try:
-        stations_df = pd.read_csv(stations_path, encoding='utf-8-sig')
-        station_names = stations_df['station_name'].dropna().tolist()
+        # Pull from live price store so new stations auto-appear
+        station_objs = price_store.list_stations()  # [{id, name, brand, ...}]
+        station_names = [s.get("name", "") for s in station_objs]
+        # Case-insensitive alphabetical sort
+        station_names = sorted([n for n in station_names if n], key=lambda x: x.lower())
     except Exception as e:
         print(f"⚠️ Error loading stations: {e}")
         station_names = []
+
 
     # Compute Manila "now + 24h" for form hint and validation baseline
     manila = ZoneInfo("Asia/Manila")
@@ -1044,11 +1047,14 @@ def supplier_sheet_pdf():
         logo_path="static/UniFleet Logo.png",
     )
 
+    # Manila-dated filename for uniqueness
+    dated = datetime.now(ZoneInfo("Asia/Manila")).strftime("%b-%d-%Y")  # e.g., Sep-12-2025
+    filename = f"UniFleet_Offline_Voucher_List_{dated}.pdf"
     return send_file(
         io.BytesIO(pdf_bytes),
         mimetype="application/pdf",
         as_attachment=True,
-        download_name="UniFleet_Offline_Voucher_List.pdf",
+        download_name=filename,
     )
 
 # =========================
