@@ -219,7 +219,10 @@ def form():
     stations = price_store.list_stations()  # [{id, name, brand, ...}]
     stations = sorted(stations, key=lambda s: (s.get("brand",""), s.get("name","")))
     cookie_val = request.cookies.get("pdf_station_ids", "")
-    selected_station_ids = [s for s in cookie_val.split(",") if s.strip()]
+    # Accept either comma or pipe as delimiter
+    cookie_val_norm = cookie_val.replace("|", ",")
+    selected_station_ids = [s.strip() for s in cookie_val_norm.split(",") if s.strip()]
+
 
     return render_template(
         "form.html",
@@ -970,14 +973,32 @@ def save_pdf_prefs():
     Persist selected station ids for the PDF (checkboxes on /form).
     Expects one or more form fields named 'station_id'.
     Stores in a cookie 'pdf_station_ids' comma-separated for ~6 months.
+    - If the POST is empty (no boxes checked), we KEEP the previous cookie.
     """
-    station_ids = request.form.getlist("station_id")
-    station_ids = [s.strip() for s in station_ids if s.strip()]
-    cookie_val = ",".join(station_ids)
+    # What the user posted
+    posted_ids = request.form.getlist("station_id")
+    posted_ids = [s.strip() for s in posted_ids if s.strip()]
+
+    # If nothing posted, keep previous cookie; else use the posted list
+    if posted_ids:
+        cookie_val = "|".join(posted_ids)
+    else:
+        # keep prior cookie value (empty string if none existed)
+        cookie_val = request.cookies.get("pdf_station_ids", "")
+
     resp = make_response(redirect(url_for("form")))
-    # 6 months expiry
-    resp.set_cookie("pdf_station_ids", cookie_val, max_age=60*60*24*30*6, samesite="Lax")
+    # IMPORTANT: set a path so cookie is sent back on /form and /supplier-sheet.pdf
+    print("Setting cookie:", cookie_val)
+    resp.set_cookie(
+        "pdf_station_ids",
+        cookie_val,
+        max_age=60 * 60 * 24 * 30 * 6,  # ~6 months
+        path="/",
+        samesite="Lax",
+        secure=False  # flip to True if you have a custom HTTPS domain; fine on Replit either way
+    )
     return resp
+
 
 @app.route("/supplier-sheet.pdf", methods=["GET"])
 def supplier_sheet_pdf():
@@ -1004,7 +1025,8 @@ def supplier_sheet_pdf():
 
     # 2) cookie fallback
     cookie_val = request.cookies.get("pdf_station_ids", "")
-    cookie_station_ids = [s for s in cookie_val.split(",") if s.strip()]
+    cookie_val_norm = cookie_val.replace("|", ",")
+    cookie_station_ids = [s.strip() for s in cookie_val_norm.split(",") if s.strip()]
 
     # 3) default to all
     all_stations = price_store.list_stations()
