@@ -21,7 +21,12 @@ REQUIRED_COLUMNS = [
     'number_of_wheels', 'status', 'redemption_timestamp'
 ]
 
-BASE_URL = "https://c62ded05-595f-42d6-b59c-55cd5cb986e6-00-287s4ts5huint.sisko.replit.dev"
+# NOTE: Read BASE_URL from env if provided; fall back to prior host.
+# Keep same variable name and behavior for compatibility.
+BASE_URL = os.environ.get(
+    "BASE_URL",
+    "https://c62ded05-595f-42d6-b59c-55cd5cb986e6-00-287s4ts5huint.sisko.replit.dev"
+).strip().rstrip("/")
 
 os.makedirs(QR_OUTPUT_DIR, exist_ok=True)
 
