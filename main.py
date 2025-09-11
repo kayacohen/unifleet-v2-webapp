@@ -450,6 +450,12 @@ def book():
     except Exception as e:
         print(f"⚠️ Error loading stations: {e}")
         station_names = []
+
+    # Compute Manila "now + 24h" for form hint and validation baseline
+    manila = ZoneInfo("Asia/Manila")
+    min_refuel_dt = (datetime.now(manila) + timedelta(hours=24))
+    min_refuel = min_refuel_dt.strftime("%Y-%m-%dT%H:%M")
+
     if request.method == 'POST':
         account_code = request.form.get('account_code', '').strip().upper()
         try:
@@ -459,13 +465,15 @@ def book():
         df.columns = df.columns.str.replace('\ufeff', '').str.strip().str.lower()
         df['account_code'] = df['account_code'].astype(str).str.strip().str.upper()
         rows = df[df['account_code'] == account_code]
+
         if not request.form.get('station'):
             if rows.empty:
-                return render_template('book.html', customer=None, presets=[], station_names=station_names)
+                return render_template('book.html', customer=None, presets=[], station_names=station_names, min_refuel=min_refuel)
             base = rows.iloc[0].to_dict()
             preset_path = f"data/presets/{account_code}_presets.csv"
             presets = pd.read_csv(preset_path, encoding='utf-8-sig').to_dict(orient='records') if os.path.isfile(preset_path) else []
-            return render_template('book.html', customer=base, presets=presets, station_names=station_names)
+            return render_template('book.html', customer=base, presets=presets, station_names=station_names, min_refuel=min_refuel)
+
         driver_mode = request.form.get('driver_mode')
         use_new = driver_mode == 'new'
         if driver_mode == 'preset' and not request.form.get('driver_select'):
@@ -473,7 +481,8 @@ def book():
             base = rows.iloc[0].to_dict()
             preset_path = f"data/presets/{account_code}_presets.csv"
             presets = pd.read_csv(preset_path, encoding='utf-8-sig').to_dict(orient='records') if os.path.isfile(preset_path) else []
-            return render_template('book.html', customer=base, presets=presets, station_names=station_names, form_values=request.form)
+            return render_template('book.html', customer=base, presets=presets, station_names=station_names, form_values=request.form, min_refuel=min_refuel)
+
         if use_new:
             driver_data = {
                 'driver_name': request.form.get('driver_name'),
@@ -493,6 +502,35 @@ def book():
                 'number_of_wheels': parts[4],
                 'fuel_type': parts[5]
             }
+
+        # === NEW: Validate refuel_datetime >= now+24h (Asia/Manila) ===
+        refuel_dt_str = (request.form.get('refuel_datetime') or '').strip()
+        try:
+            # HTML datetime-local is naive; interpret as Manila local
+            refuel_dt_mnl = datetime.strptime(refuel_dt_str, "%Y-%m-%dT%H:%M").replace(tzinfo=manila)
+            if refuel_dt_mnl < min_refuel_dt:
+                flash("Refuel Date & Time must be at least 24 hours from now (Asia/Manila).", "error")
+                base = rows.iloc[0].to_dict() if not rows.empty else None
+                preset_path = f"data/presets/{account_code}_presets.csv"
+                presets = pd.read_csv(preset_path, encoding='utf-8-sig').to_dict(orient='records') if os.path.isfile(preset_path) else []
+                return render_template('book.html',
+                                       customer=base,
+                                       presets=presets,
+                                       station_names=station_names,
+                                       form_values=request.form,
+                                       min_refuel=min_refuel)
+        except Exception:
+            # If parsing fails, treat as invalid
+            flash("Please enter a valid Refuel Date & Time (YYYY-MM-DDTHH:MM).", "error")
+            base = rows.iloc[0].to_dict() if not rows.empty else None
+            preset_path = f"data/presets/{account_code}_presets.csv"
+            presets = pd.read_csv(preset_path, encoding='utf-8-sig').to_dict(orient='records') if os.path.isfile(preset_path) else []
+            return render_template('book.html',
+                                   customer=base,
+                                   presets=presets,
+                                   station_names=station_names,
+                                   form_values=request.form,
+                                   min_refuel=min_refuel)
 
         # ---- CAPTURE BOOKING-TIME SNAPSHOTS (price & discount) ----
         station_name = (request.form.get('station') or '').strip()
@@ -555,7 +593,7 @@ def book():
             'account_code': account_code,
             'station': station_name,
             'requested_amount_php': float(request.form.get('requested_amount_php') or 0),
-            'refuel_datetime': request.form.get('refuel_datetime'),
+            'refuel_datetime': refuel_dt_str,  # keep original string
 
             'driver_name': driver_data['driver_name'],
             'vehicle_plate': driver_data['vehicle_plate'],
@@ -598,7 +636,9 @@ def book():
 
         due_amount = request.form.get('requested_amount_php')
         return render_template('booking_success.html', payment_info=PAYMENT_INFO, due_amount=due_amount)
-    return render_template('book.html', customer=None, presets=[], station_names=station_names)
+
+    # GET: blank form (include min_refuel hint)
+    return render_template('book.html', customer=None, presets=[], station_names=station_names, min_refuel=min_refuel)
 
 @app.route('/discount-locator')
 def discount_locator():
