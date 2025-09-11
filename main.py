@@ -97,18 +97,14 @@ OPS_TOKEN = os.environ.get("OPS_TOKEN", "").strip()
 
 # ===== Payment instructions config =====
 PAYMENT_INFO = {
-    "unionbank": {
-        "label": "UnionBank",
+    "gotyme": {
+        "label": "GoTyme Bank",
         "account_name": "UniFleet Inc.",
         "account_number": "1234-5678-9012",  # <-- replace with real
     },
-    "gcash": {
-        "label": "GCash",
-        "account_name": "UniFleet Inc.",
-        "account_number": "0945-149-2369",   # <-- replace with real
-    },
     "fee_note": "Bank/app transfer fees are paid by you/sender. Your voucher will not be activated until payment is confirmed. Send payment confirmation to 0945-149-2369."
 }
+
 
 # ===== Tiny CSV-safe audit log =====
 AUDIT_PATH = "data/ops_audit_log.csv"
@@ -1016,14 +1012,16 @@ def supplier_sheet_pdf():
 
     selected_ids = query_station_ids or cookie_station_ids or all_ids
 
-    # Build PDF in-memory
-    vouchers = repo.list_all_vouchers()
+    # Build PDF in-memory (Unredeemed only)
+    rows = repo.list_all_vouchers()
+    vouchers = [r for r in rows if (r.get("status") or "").strip() == "Unredeemed"]
     pdf_bytes = build_supplier_pdf(
         vouchers=vouchers,
         target_station_ids=set(selected_ids),
         stations=all_stations,
         logo_path="static/UniFleet Logo.png",
     )
+
     return send_file(
         io.BytesIO(pdf_bytes),
         mimetype="application/pdf",
