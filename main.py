@@ -764,6 +764,11 @@ def export_supplier_csv():
             ts = r.get("refuel_datetime") or r.get("expected_refill_date") or r.get("transaction_date")
             refuel_date_mnl = manila_time_filter(ts)
 
+            # New: redeemed timestamp (Manila)
+            redeemed_ts = r.get("redemption_timestamp")
+            redeemed_mnl = manila_time_filter(redeemed_ts)
+
+            
             out_rows.append({
                 "Customer": "UniFleet",
                 "Fuel Product": "Diesel",
@@ -780,7 +785,9 @@ def export_supplier_csv():
                 "Plate": r.get("vehicle_plate", "") or "",
                 "Status": r.get("status", "") or "",
                 "Refuel Date": refuel_date_mnl,
+                "Redeemed At": redeemed_mnl,  # <-- NEW COLUMN
             })
+
 
         export_path = 'data/supplier_export.csv'
         pd.DataFrame(out_rows).to_csv(export_path, index=False, encoding='utf-8-sig')
