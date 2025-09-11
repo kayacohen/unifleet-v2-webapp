@@ -587,9 +587,15 @@ def book():
 
         preset_path = f"data/presets/{account_code}_presets.csv"
         existing = pd.read_csv(preset_path, encoding='utf-8-sig') if os.path.isfile(preset_path) else pd.DataFrame()
-        if driver_data['vehicle_plate'] not in existing.get('vehicle_plate', []):
-            updated = pd.concat([existing, pd.DataFrame([driver_data])])
+        plate_key = str(driver_data['vehicle_plate']).strip().upper()
+        exists = (
+            'vehicle_plate' in existing.columns
+            and existing['vehicle_plate'].astype(str).str.strip().str.upper().eq(plate_key).any()
+        )
+        if not exists:
+            updated = pd.concat([existing, pd.DataFrame([driver_data])], ignore_index=True)
             updated.to_csv(preset_path, index=False, encoding='utf-8-sig')
+
         due_amount = request.form.get('requested_amount_php')
         return render_template('booking_success.html', payment_info=PAYMENT_INFO, due_amount=due_amount)
     return render_template('book.html', customer=None, presets=[], station_names=station_names)
