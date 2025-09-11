@@ -197,3 +197,13 @@ static/qr_codes/*.png
 
 # PDF exports
 data/reports/*.pdf
+
+# Runtime data (do not track)
+data/presets/*.csv
+data/station_prices.json
+data/master_vouchers.csv
+
+# More runtime logs/backups
+data/ops_audit_log.csv
+backups/
+data/station_prices.json.backup.*
