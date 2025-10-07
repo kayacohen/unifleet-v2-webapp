@@ -1,0 +1,10 @@
+﻿Customer,Fuel Product,Invoice,Station,Price (₱/L),Discount (₱/L),Requested (₱),Free Fuel Value (₱),Total Value (₱),Liters Requested,Liters Dispensed,Driver,Plate,Status,Refuel Date,Redeemed At
+UniFleet,Diesel,UF-20250911-QKFHW,EcoOil - Pasay,56.00,2.60,2000.00,92.85,2092.85,35.71,37.37,Maricel Garcia,HYU0029,Redeemed,2025-09-10 22:15,2025-09-11 02:14
+UniFleet,Diesel,UF-20250911-MJS8J,EcoOil - EDSA Mandaluyong,53.00,2.30,2000.00,86.80,2086.80,37.74,39.38,Maricel Garcia,HYU0029,Redeemed,2025-09-10 22:26,2025-09-11 02:24
+UniFleet,Diesel,UF-20250911-MHGAW,EcoOil - Pampanga,55.00,2.50,2100.00,95.45,2195.45,38.18,39.92,Jerissa Vinluan-Bacus,XYZ123,Redeemed,2025-09-10 22:53,2025-09-11 02:49
+UniFleet,Diesel,UF-20250911-6P59G,EcoOil - EDSA Mandaluyong,53.00,2.30,1000.00,43.40,1043.40,18.87,19.69,Jerissa Vinluan-Bacus,XYZ123,Redeemed,2025-09-12 11:23,2025-09-11 03:32
+UniFleet,Diesel,UF-20250911-MY1RU,EcoOil - EDSA Mandaluyong,53.00,2.30,2000.00,86.80,2086.80,37.74,39.38,Maricel Garcia,HYU0029,Redeemed,2025-09-13 00:08,2025-09-11 04:05
+UniFleet,Diesel,UF-20250911-BS231,EcoOil - Silang,59.00,2.90,2000.00,98.31,2098.31,33.90,35.57,Maricel Garcia,HYU0029,Redeemed,2025-09-13 00:28,2025-09-13 22:36
+UniFleet,Diesel,UF-20250913-M6NRE,EcoOil - EDSA Mandaluyong,53.00,2.30,1000.00,43.40,1043.40,18.87,19.69,adir,hyu1234,Redeemed,2025-09-15 08:06,2025-09-13 13:00
+UniFleet,Diesel,UF-20250913-TC5DO,EcoOil - Pasay,56.00,2.60,3000.00,139.28,3139.28,53.57,56.06,adir,hyu1234,Redeemed,2025-09-16 18:39,2025-09-13 22:36
+UniFleet,Diesel,UF-20250930-6Z17P,EcoOil - Marikina,54.00,2.40,5000.00,222.22,5222.22,92.59,96.71,Maricel Garcia,HYU0029,Redeemed,2025-10-01 18:16,2025-09-30 07:26

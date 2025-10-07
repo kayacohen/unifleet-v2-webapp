@@ -20,6 +20,15 @@ def _coalesce(*vals):
         return v
     return None
 
+def _to_float(v, default=0.0):
+    try:
+        s = str(v).strip()
+        if s == "" or s.lower() == "nan":
+            return float(default)
+        return float(s)
+    except Exception:
+        return float(default)
+
 def _fmt_money(v):
     try:
         return f"{float(v):,.2f}"
@@ -32,16 +41,40 @@ def _draw_paragraph(c, text, style, x, y, max_width):
     p.drawOn(c, x, y - h)
     return y - h
 
+def _total_amount_php_from_row(r: dict) -> float:
+    """
+    Preferred order:
+      1) total_dispensed
+      2) total_dispensed_php
+      3) requested_amount_php + discount_total (or discount_total_php)
+    Falls back to 0.0 if nothing usable is present.
+    """
+    # 1) direct totals
+    td = _coalesce(r.get("total_dispensed"))
+    if td is not None:
+        return _to_float(td, 0.0)
+
+    tdp = _coalesce(r.get("total_dispensed_php"))
+    if tdp is not None:
+        return _to_float(tdp, 0.0)
+
+    # 2) compute from components
+    requested = _to_float(_coalesce(r.get("requested_amount_php")), 0.0)
+    # discount_total or discount_total_php (headers you showed include both)
+    discount = _to_float(_coalesce(r.get("discount_total"), r.get("discount_total_php")), 0.0)
+
+    return round(requested + discount, 2)
+
 def build_supplier_pdf(*, vouchers, target_station_ids, stations, logo_path=None) -> bytes:
     """
     Supplier Sheet (A4 landscape)
 
     Columns:
-      - Station
+      - Station (Expected)
       - Amount (PHP)
       - Driver name
       - Plate
-      - Voucher ID
+      - Voucher ID (Unredeemed)
       - Name / Signature
     """
     # Selected stations (match by station name best-effort)
@@ -61,7 +94,10 @@ def build_supplier_pdf(*, vouchers, target_station_ids, stations, logo_path=None
         if not include:
             continue
 
-        amount = _coalesce(r.get("requested_amount_php"), 0) or 0
+        # ── FIX: Amount must be total, not requested ───────────────────────────
+        amount = _total_amount_php_from_row(r)
+        # ───────────────────────────────────────────────────────────────────────
+
         driver = r.get("driver_name") or ""
         plate = r.get("vehicle_plate") or ""
         vid = r.get("voucher_id") or ""
@@ -114,7 +150,7 @@ def build_supplier_pdf(*, vouchers, target_station_ids, stations, logo_path=None
             pass
 
     # Table (adjusted widths & row height via padding)
-    header = ["Station", "Amount (PHP)", "Driver name", "Plate", "Voucher ID", "Name / Signature"]
+    header = ["Station (Expected)", "Amount (PHP)", "Driver name", "Plate", "Voucher ID (Unredeemed)", "Name / Signature"]
     data = [header]
     data.extend(rows if rows else [["—"] * len(header)])
 

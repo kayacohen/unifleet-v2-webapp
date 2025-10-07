@@ -160,8 +160,19 @@
       </details>
 
       <label for="refuel_datetime">Refuel Date & Time</label>
-      <input type="datetime-local" name="refuel_datetime" class="full-width-input" required
-      value="{{ form_values.refuel_datetime if form_values else '' }}">
+      <input
+        type="datetime-local"
+        name="refuel_datetime"
+        id="refuel_datetime"
+        class="full-width-input"
+        required
+        {% if min_refuel %}min="{{ min_refuel }}"{% endif %}
+        value="{{ form_values.refuel_datetime if form_values and form_values.refuel_datetime else '' }}"
+      >
+      <div class="note">
+        Must be at least <strong>24 hours</strong> from now (Asia/Manila).
+      </div>
+
 
       <hr style="margin: 2rem 0;">
 
@@ -196,7 +207,14 @@
         <input type="number" name="number_of_wheels" class="full-width-input">
 
         <label for="fuel_type">Fuel Type</label>
-        <input type="text" name="fuel_type" placeholder="e.g. Diesel" value="Diesel" class="full-width-input">
+        <input
+          type="text"
+          name="fuel_type"
+          value="Diesel"
+          class="full-width-input"
+          readonly
+          title="Fuel type is fixed to Diesel"
+        />
 
         <label for="truck_make">Vehicle Make</label>
         <input type="text" name="truck_make" class="full-width-input">

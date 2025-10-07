@@ -33,6 +33,23 @@ app = Flask(__name__)
 # =========================
 # Filters / Utilities
 # =========================
+
+# --- Lightweight health probe (for UptimeRobot/AppScript warmups) ---
+@app.route("/healthz", methods=["GET", "HEAD"])
+def healthz():
+    # Flask will normally treat HEAD like GET and then strip the body,
+    # but Replit proxies sometimes glitch. This avoids issues.
+    if request.method == "HEAD":
+        return ("", 200, {
+            "Content-Type": "text/plain; charset=utf-8",
+            "Cache-Control": "no-store"
+        })
+    return ("ok", 200, {
+        "Content-Type": "text/plain; charset=utf-8",
+        "Cache-Control": "no-store"
+    })
+
+
 @app.template_filter("manila_time")
 def manila_time_filter(value):
     """
@@ -97,18 +114,14 @@ OPS_TOKEN = os.environ.get("OPS_TOKEN", "").strip()
 
 # ===== Payment instructions config =====
 PAYMENT_INFO = {
-    "unionbank": {
-        "label": "UnionBank",
+    "gotyme": {
+        "label": "GoTyme Bank",
         "account_name": "UniFleet Inc.",
         "account_number": "1234-5678-9012",  # <-- replace with real
     },
-    "gcash": {
-        "label": "GCash",
-        "account_name": "UniFleet Inc.",
-        "account_number": "0945-149-2369",   # <-- replace with real
-    },
     "fee_note": "Bank/app transfer fees are paid by you/sender. Your voucher will not be activated until payment is confirmed. Send payment confirmation to 0945-149-2369."
 }
+
 
 # ===== Tiny CSV-safe audit log =====
 AUDIT_PATH = "data/ops_audit_log.csv"
@@ -223,7 +236,10 @@ def form():
     stations = price_store.list_stations()  # [{id, name, brand, ...}]
     stations = sorted(stations, key=lambda s: (s.get("brand",""), s.get("name","")))
     cookie_val = request.cookies.get("pdf_station_ids", "")
-    selected_station_ids = [s for s in cookie_val.split(",") if s.strip()]
+    # Accept either comma or pipe as delimiter
+    cookie_val_norm = cookie_val.replace("|", ",")
+    selected_station_ids = [s.strip() for s in cookie_val_norm.split(",") if s.strip()]
+
 
     return render_template(
         "form.html",
@@ -443,13 +459,22 @@ def test_success():
 def book():
     customers_path = 'data/customers.csv'
     booking_path = 'data/requested_vouchers.csv'
-    stations_path = 'data/stations.csv'
     try:
-        stations_df = pd.read_csv(stations_path, encoding='utf-8-sig')
-        station_names = stations_df['station_name'].dropna().tolist()
+        # Pull from live price store so new stations auto-appear
+        station_objs = price_store.list_stations()  # [{id, name, brand, ...}]
+        station_names = [s.get("name", "") for s in station_objs]
+        # Case-insensitive alphabetical sort
+        station_names = sorted([n for n in station_names if n], key=lambda x: x.lower())
     except Exception as e:
         print(f"⚠️ Error loading stations: {e}")
         station_names = []
+
+
+    # Compute Manila "now + 24h" for form hint and validation baseline
+    manila = ZoneInfo("Asia/Manila")
+    min_refuel_dt = (datetime.now(manila) + timedelta(hours=24))
+    min_refuel = min_refuel_dt.strftime("%Y-%m-%dT%H:%M")
+
     if request.method == 'POST':
         account_code = request.form.get('account_code', '').strip().upper()
         try:
@@ -459,13 +484,15 @@ def book():
         df.columns = df.columns.str.replace('\ufeff', '').str.strip().str.lower()
         df['account_code'] = df['account_code'].astype(str).str.strip().str.upper()
         rows = df[df['account_code'] == account_code]
+
         if not request.form.get('station'):
             if rows.empty:
-                return render_template('book.html', customer=None, presets=[], station_names=station_names)
+                return render_template('book.html', customer=None, presets=[], station_names=station_names, min_refuel=min_refuel)
             base = rows.iloc[0].to_dict()
             preset_path = f"data/presets/{account_code}_presets.csv"
             presets = pd.read_csv(preset_path, encoding='utf-8-sig').to_dict(orient='records') if os.path.isfile(preset_path) else []
-            return render_template('book.html', customer=base, presets=presets, station_names=station_names)
+            return render_template('book.html', customer=base, presets=presets, station_names=station_names, min_refuel=min_refuel)
+
         driver_mode = request.form.get('driver_mode')
         use_new = driver_mode == 'new'
         if driver_mode == 'preset' and not request.form.get('driver_select'):
@@ -473,7 +500,8 @@ def book():
             base = rows.iloc[0].to_dict()
             preset_path = f"data/presets/{account_code}_presets.csv"
             presets = pd.read_csv(preset_path, encoding='utf-8-sig').to_dict(orient='records') if os.path.isfile(preset_path) else []
-            return render_template('book.html', customer=base, presets=presets, station_names=station_names, form_values=request.form)
+            return render_template('book.html', customer=base, presets=presets, station_names=station_names, form_values=request.form, min_refuel=min_refuel)
+
         if use_new:
             driver_data = {
                 'driver_name': request.form.get('driver_name'),
@@ -493,6 +521,35 @@ def book():
                 'number_of_wheels': parts[4],
                 'fuel_type': parts[5]
             }
+
+        # === NEW: Validate refuel_datetime >= now+24h (Asia/Manila) ===
+        refuel_dt_str = (request.form.get('refuel_datetime') or '').strip()
+        try:
+            # HTML datetime-local is naive; interpret as Manila local
+            refuel_dt_mnl = datetime.strptime(refuel_dt_str, "%Y-%m-%dT%H:%M").replace(tzinfo=manila)
+            if refuel_dt_mnl < min_refuel_dt:
+                flash("Refuel Date & Time must be at least 24 hours from now (Asia/Manila).", "error")
+                base = rows.iloc[0].to_dict() if not rows.empty else None
+                preset_path = f"data/presets/{account_code}_presets.csv"
+                presets = pd.read_csv(preset_path, encoding='utf-8-sig').to_dict(orient='records') if os.path.isfile(preset_path) else []
+                return render_template('book.html',
+                                       customer=base,
+                                       presets=presets,
+                                       station_names=station_names,
+                                       form_values=request.form,
+                                       min_refuel=min_refuel)
+        except Exception:
+            # If parsing fails, treat as invalid
+            flash("Please enter a valid Refuel Date & Time (YYYY-MM-DDTHH:MM).", "error")
+            base = rows.iloc[0].to_dict() if not rows.empty else None
+            preset_path = f"data/presets/{account_code}_presets.csv"
+            presets = pd.read_csv(preset_path, encoding='utf-8-sig').to_dict(orient='records') if os.path.isfile(preset_path) else []
+            return render_template('book.html',
+                                   customer=base,
+                                   presets=presets,
+                                   station_names=station_names,
+                                   form_values=request.form,
+                                   min_refuel=min_refuel)
 
         # ---- CAPTURE BOOKING-TIME SNAPSHOTS (price & discount) ----
         station_name = (request.form.get('station') or '').strip()
@@ -555,7 +612,7 @@ def book():
             'account_code': account_code,
             'station': station_name,
             'requested_amount_php': float(request.form.get('requested_amount_php') or 0),
-            'refuel_datetime': request.form.get('refuel_datetime'),
+            'refuel_datetime': refuel_dt_str,  # keep original string
 
             'driver_name': driver_data['driver_name'],
             'vehicle_plate': driver_data['vehicle_plate'],
@@ -587,12 +644,20 @@ def book():
 
         preset_path = f"data/presets/{account_code}_presets.csv"
         existing = pd.read_csv(preset_path, encoding='utf-8-sig') if os.path.isfile(preset_path) else pd.DataFrame()
-        if driver_data['vehicle_plate'] not in existing.get('vehicle_plate', []):
-            updated = pd.concat([existing, pd.DataFrame([driver_data])])
+        plate_key = str(driver_data['vehicle_plate']).strip().upper()
+        exists = (
+            'vehicle_plate' in existing.columns
+            and existing['vehicle_plate'].astype(str).str.strip().str.upper().eq(plate_key).any()
+        )
+        if not exists:
+            updated = pd.concat([existing, pd.DataFrame([driver_data])], ignore_index=True)
             updated.to_csv(preset_path, index=False, encoding='utf-8-sig')
+
         due_amount = request.form.get('requested_amount_php')
         return render_template('booking_success.html', payment_info=PAYMENT_INFO, due_amount=due_amount)
-    return render_template('book.html', customer=None, presets=[], station_names=station_names)
+
+    # GET: blank form (include min_refuel hint)
+    return render_template('book.html', customer=None, presets=[], station_names=station_names, min_refuel=min_refuel)
 
 @app.route('/discount-locator')
 def discount_locator():
@@ -716,6 +781,11 @@ def export_supplier_csv():
             ts = r.get("refuel_datetime") or r.get("expected_refill_date") or r.get("transaction_date")
             refuel_date_mnl = manila_time_filter(ts)
 
+            # New: redeemed timestamp (Manila)
+            redeemed_ts = r.get("redemption_timestamp")
+            redeemed_mnl = manila_time_filter(redeemed_ts)
+
+            
             out_rows.append({
                 "Customer": "UniFleet",
                 "Fuel Product": "Diesel",
@@ -732,7 +802,9 @@ def export_supplier_csv():
                 "Plate": r.get("vehicle_plate", "") or "",
                 "Status": r.get("status", "") or "",
                 "Refuel Date": refuel_date_mnl,
+                "Redeemed At": redeemed_mnl,  # <-- NEW COLUMN
             })
+
 
         export_path = 'data/supplier_export.csv'
         pd.DataFrame(out_rows).to_csv(export_path, index=False, encoding='utf-8-sig')
@@ -928,14 +1000,32 @@ def save_pdf_prefs():
     Persist selected station ids for the PDF (checkboxes on /form).
     Expects one or more form fields named 'station_id'.
     Stores in a cookie 'pdf_station_ids' comma-separated for ~6 months.
+    - If the POST is empty (no boxes checked), we KEEP the previous cookie.
     """
-    station_ids = request.form.getlist("station_id")
-    station_ids = [s.strip() for s in station_ids if s.strip()]
-    cookie_val = ",".join(station_ids)
+    # What the user posted
+    posted_ids = request.form.getlist("station_id")
+    posted_ids = [s.strip() for s in posted_ids if s.strip()]
+
+    # If nothing posted, keep previous cookie; else use the posted list
+    if posted_ids:
+        cookie_val = "|".join(posted_ids)
+    else:
+        # keep prior cookie value (empty string if none existed)
+        cookie_val = request.cookies.get("pdf_station_ids", "")
+
     resp = make_response(redirect(url_for("form")))
-    # 6 months expiry
-    resp.set_cookie("pdf_station_ids", cookie_val, max_age=60*60*24*30*6, samesite="Lax")
+    # IMPORTANT: set a path so cookie is sent back on /form and /supplier-sheet.pdf
+    print("Setting cookie:", cookie_val)
+    resp.set_cookie(
+        "pdf_station_ids",
+        cookie_val,
+        max_age=60 * 60 * 24 * 30 * 6,  # ~6 months
+        path="/",
+        samesite="Lax",
+        secure=False  # flip to True if you have a custom HTTPS domain; fine on Replit either way
+    )
     return resp
+
 
 @app.route("/supplier-sheet.pdf", methods=["GET"])
 def supplier_sheet_pdf():
@@ -962,7 +1052,8 @@ def supplier_sheet_pdf():
 
     # 2) cookie fallback
     cookie_val = request.cookies.get("pdf_station_ids", "")
-    cookie_station_ids = [s for s in cookie_val.split(",") if s.strip()]
+    cookie_val_norm = cookie_val.replace("|", ",")
+    cookie_station_ids = [s.strip() for s in cookie_val_norm.split(",") if s.strip()]
 
     # 3) default to all
     all_stations = price_store.list_stations()
@@ -970,19 +1061,24 @@ def supplier_sheet_pdf():
 
     selected_ids = query_station_ids or cookie_station_ids or all_ids
 
-    # Build PDF in-memory
-    vouchers = repo.list_all_vouchers()
+    # Build PDF in-memory (Unredeemed only)
+    rows = repo.list_all_vouchers()
+    vouchers = [r for r in rows if (r.get("status") or "").strip() == "Unredeemed"]
     pdf_bytes = build_supplier_pdf(
         vouchers=vouchers,
         target_station_ids=set(selected_ids),
         stations=all_stations,
         logo_path="static/UniFleet Logo.png",
     )
+
+    # Manila-dated filename for uniqueness
+    dated = datetime.now(ZoneInfo("Asia/Manila")).strftime("%b-%d-%Y")  # e.g., Sep-12-2025
+    filename = f"UniFleet_Offline_Voucher_List_{dated}.pdf"
     return send_file(
         io.BytesIO(pdf_bytes),
         mimetype="application/pdf",
         as_attachment=True,
-        download_name="UniFleet_Offline_Voucher_List.pdf",
+        download_name=filename,
     )
 
 # =========================

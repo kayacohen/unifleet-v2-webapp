@@ -130,7 +130,19 @@
           font-weight: 700;
           color: #233b64;
           border-bottom: 1px solid #f0f3f8;
+
+          /* show a caret and align like a header */
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
         }
+        .panel .caret {
+          font-weight: 700;
+          color: #8aa0c2;
+          transition: transform 0.15s ease;
+        }
+        .panel[open] .caret { transform: rotate(180deg); }
+
         .panel > summary::-webkit-details-marker { display: none; }
 
         /* Constrain panel inner width and center it */
@@ -237,7 +249,7 @@
     <!-- Supplier PDF filter + actions (persist via cookie) -->
     <!-- NOTE: removed `open` so it's collapsed by default -->
     <details class="panel">
-      <summary>Supplier PDF</summary>
+      <summary>Supplier PDF <span class="caret">▾</span></summary>
 
       <!-- Compact controls row -->
       <div class="panel-controls">
@@ -258,7 +270,8 @@
                 name="station_id"
                 value="{{ s.get('id') }}"
                 {% if default_all or (s.get('id') in selected_station_ids) %}checked{% endif %}
-              >
+              />
+
               <span class="station-pill-text">
                 {{ (s.get('brand') or '') }} — {{ (s.get('name') or '') }}
               </span>
@@ -268,8 +281,9 @@
 
         <div class="panel-actions">
           <button type="submit" class="btn-primary">Save Selection</button>
-          <a class="btn-secondary" href="/supplier-sheet.pdf" download>Download Supplier PDF</a>
+          <button type="button" class="btn-secondary" id="exportSupplierPdf">Download Supplier PDF</button>
         </div>
+
       </form>
     </details>
 
@@ -400,6 +414,25 @@
           if (clearAllBtn)  clearAllBtn.addEventListener("click", () => setAll(false));
         })();
     </script>
+
+  <script>
+    (function () {
+      const exportBtn = document.getElementById('exportSupplierPdf');
+      const form = document.getElementById('pdfPrefsForm');
+      if (!exportBtn || !form) return;
+
+      exportBtn.addEventListener('click', () => {
+        const ids = Array.from(
+          form.querySelectorAll('input[type="checkbox"][name="station_id"]:checked')
+        ).map(cb => cb.value);
+        const qs = ids.length
+          ? ('?' + ids.map(id => 'station=' + encodeURIComponent(id)).join('&'))
+          : '';
+        window.location.href = '/supplier-sheet.pdf' + qs;
+      });
+    })();
+  </script>
+
 
 </body>
 </html>
