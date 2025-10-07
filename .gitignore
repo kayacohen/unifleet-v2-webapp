@@ -207,3 +207,10 @@ data/master_vouchers.csv
 data/ops_audit_log.csv
 backups/
 data/station_prices.json.backup.*
+
+archive/
+data/supplier_export.csv
+data/*.runtime.bak
+data/*.backup.*
+uploads/*
+static/qr_codes/*.png

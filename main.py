@@ -33,6 +33,23 @@ app = Flask(__name__)
 # =========================
 # Filters / Utilities
 # =========================
+
+# --- Lightweight health probe (for UptimeRobot/AppScript warmups) ---
+@app.route("/healthz", methods=["GET", "HEAD"])
+def healthz():
+    # Flask will normally treat HEAD like GET and then strip the body,
+    # but Replit proxies sometimes glitch. This avoids issues.
+    if request.method == "HEAD":
+        return ("", 200, {
+            "Content-Type": "text/plain; charset=utf-8",
+            "Cache-Control": "no-store"
+        })
+    return ("ok", 200, {
+        "Content-Type": "text/plain; charset=utf-8",
+        "Cache-Control": "no-store"
+    })
+
+
 @app.template_filter("manila_time")
 def manila_time_filter(value):
     """
