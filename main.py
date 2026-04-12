@@ -425,7 +425,10 @@ def register():
         company_name = request.form.get('company_name', '').strip()
         clean = re.sub(r'[^A-Za-z]', '', company_name.upper())
         account_code = (clean[:4] if len(clean) >= 4 else ''.join(random.choices(string.ascii_uppercase, k=4)))
-        def sanitize(v): return str(v).strip() if v else ''
+
+        def sanitize(v):
+            return str(v).strip() if v else ''
+
         new_row = {
             'account_code': account_code,
             'contact_name': sanitize(request.form.get('contact_name')),
@@ -434,17 +437,26 @@ def register():
             'company_name': sanitize(company_name),
             'fleet_size': sanitize(request.form.get('fleet_size')),
             'areas': sanitize(request.form.get('areas')),
-            'refuel_locations': sanitize(request.form.get('refuel_locations')),
-            'hq_locations': sanitize(request.form.get('hq_locations'))
+            # Keep legacy columns blank so old CSV structure does not break
+            'refuel_locations': '',
+            'hq_locations': ''
         }
+
         customers_path = 'data/customers.csv'
         if os.path.isfile(customers_path):
             df = pd.read_csv(customers_path, dtype=str)
         else:
             df = pd.DataFrame(columns=list(new_row.keys()))
+
+        # Ensure legacy columns still exist even if older file/header differs
+        for col in new_row.keys():
+            if col not in df.columns:
+                df[col] = ''
+
         df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
         df.to_csv(customers_path, index=False, encoding='utf-8-sig')
         return redirect(f"/register/success?account_code={account_code}")
+
     return render_template('register.html')
 
 @app.route('/register/success')
@@ -785,7 +797,7 @@ def export_supplier_csv():
             redeemed_ts = r.get("redemption_timestamp")
             redeemed_mnl = manila_time_filter(redeemed_ts)
 
-            
+
             out_rows.append({
                 "Customer": "UniFleet",
                 "Fuel Product": "Diesel",
