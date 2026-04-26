@@ -131,7 +131,7 @@
 
     .discount-value {
       font-weight: 700;
-      color: #d93025; /* updated to red */
+      color: #d93025;
     }
 
     .price-value {
@@ -185,6 +185,12 @@
         {% for name in station_names %}
           <option value="{{ name }}">{{ name }}</option>
         {% endfor %}
+      </select>
+
+      <label for="product_type">Fuel Type</label>
+      <select name="product_type" id="product_type" class="full-width-input" required>
+        <option value="diesel" selected>Diesel</option>
+        <option value="gasoline">Gasoline</option>
       </select>
 
       <div style="background-color: #e6f0fb; padding: 1.5rem; border-radius: 8px; margin: 1.5rem 0;">
@@ -259,14 +265,14 @@
         <iframe src="https://www.google.com/maps/d/u/1/embed?mid=1-kTfMqXppZshSnH0n4KyTjsBV9Af_9k&ehbc=2E312F&noprof=1" loading="lazy"></iframe>
       </div>
 
-      <label for="requested_amount_php">Prepaid Diesel Amount (in PHP) [Discount Applied Later]</label>
+      <label for="requested_amount_php">Prepaid Diesel/Gasoline Amount (in PHP) [Discount Applied Later]</label>
       <input type="number" name="requested_amount_php" class="full-width-input" required
       value="{{ form_values.requested_amount_php if form_values else '' }}">
 
       <details>
         <summary>How Discounts Work</summary>
         <p>You pay the prepaid amount — and we add a rebate on top based on your selected station’s discount.</p>
-        <p><strong>Example:</strong> You book ₱10,000 at a station with ₱2.50/L discount and a live diesel price of ₱51.30/L.</p>
+        <p><strong>Example:</strong> You book ₱10,000 at a station with ₱2.50/L discount and a live fuel price of ₱51.30/L.</p>
         <p>→ That’s ~195 liters (₱10,000 ÷ 51.30)</p>
         <p>→ Discount = 195L × ₱2.50 = ₱487.50</p>
         <p><strong>Voucher total:</strong> ₱10,000 + ₱487.50 = ₱10,487.50</p>
@@ -320,14 +326,14 @@
         <label for="number_of_wheels">Number of Wheels on Vehicle</label>
         <input type="number" name="number_of_wheels" class="full-width-input">
 
-        <label for="fuel_type">Fuel Type</label>
+        <label for="fuel_type">Vehicle Fuel Type</label>
         <input
           type="text"
           name="fuel_type"
           value="Diesel"
           class="full-width-input"
           readonly
-          title="Fuel type is fixed to Diesel"
+          title="Vehicle fuel type is fixed to Diesel for this MVP"
         />
 
         <label for="truck_make">Vehicle Make</label>
@@ -363,7 +369,7 @@
     }
 
     modeSelect.addEventListener('change', toggleDriverMode);
-    window.addEventListener('load', toggleDriverMode); // Initial load
+    window.addEventListener('load', toggleDriverMode);
   </script>
 
   {% if not presets %}

@@ -537,7 +537,7 @@ def book():
                 "gasoline_price": gasoline_price,
                 "gasoline_discount": gasoline_discount,
 
-                # Keep old keys for current book.html compatibility until template is updated
+                # Keep old keys for compatibility
                 "price_php_per_liter": diesel_price,
                 "discount_per_liter": diesel_discount,
             })
@@ -631,7 +631,7 @@ def book():
                 'fuel_type': parts[5]
             }
 
-        # === NEW: Validate refuel_datetime >= now+24h (Asia/Manila) ===
+        # === Validate refuel_datetime >= now+24h (Asia/Manila) ===
         refuel_dt_str = (request.form.get('refuel_datetime') or '').strip()
         try:
             # HTML datetime-local is naive; interpret as Manila local
@@ -670,6 +670,12 @@ def book():
 
         # ---- CAPTURE BOOKING-TIME SNAPSHOTS (price & discount) ----
         station_name = (request.form.get('station') or '').strip()
+        product_type = (request.form.get('product_type') or 'diesel').strip().lower()
+
+        if product_type not in ["diesel", "gasoline"]:
+            product_type = "diesel"
+
+        product_type_display = "Gasoline" if product_type == "gasoline" else "Diesel"
 
         # Robust normalizers: fix em/en dashes → '-', strip, lowercase, and slugify
         import re as _re
@@ -683,7 +689,7 @@ def book():
             s = _re.sub(r'[\s-]+', '_', s)
             return s.strip('_')
 
-        # 1) live price snapshot (from price_store)
+        # 1) live price snapshot (fuel-aware, with diesel fallback)
         price_snapshot = 0.0
         price_snapshot_updated_at = 0
         try:
@@ -691,6 +697,7 @@ def book():
             match = None
             target_norm = _norm_dashes(station_name)
             target_slug = _slug(station_name)
+
             for s in stations:
                 if _norm_dashes(s.get("id")) == target_norm:
                     match = s
@@ -705,29 +712,47 @@ def book():
                     if _slug(s.get("name")) == target_slug:
                         match = s
                         break
+
             if match:
-                price_snapshot = float(match.get("price_php_per_liter") or 0)
-                price_snapshot_updated_at = int(match.get("updated_at") or 0)
+                fuel_prices = match.get("fuel_prices") or {}
+                fuel_info = fuel_prices.get(product_type) or {}
+
+                # fallback to diesel if selected fuel is missing
+                if not fuel_info:
+                    fuel_info = fuel_prices.get("diesel") or {}
+
+                price_snapshot = float(
+                    fuel_info.get("price_php_per_liter")
+                    or match.get("price_php_per_liter")
+                    or 0
+                )
+
+                price_snapshot_updated_at = int(
+                    fuel_info.get("updated_at")
+                    or match.get("updated_at")
+                    or 0
+                )
+
         except Exception as _e:
             print("⚠️ price snapshot error:", _e)
 
-        # 2) live discount snapshot (from discount_store)
+        # 2) live discount snapshot (fuel-aware, with diesel fallback)
         dpl_snapshot = 0.0
         dpl_captured_at = int(datetime.utcnow().timestamp())
         try:
-            val = discount_store.get(station_name)
+            val = discount_store.get(station_name, product_type)
+
+            # fallback to diesel if selected fuel discount is missing
             if val is None:
-                all_discounts = discount_store.get_all() or {}
-                for k, v in all_discounts.items():
-                    if _norm_dashes(k) == target_norm or _slug(k) == target_slug:
-                        val = v
-                        break
+                val = discount_store.get(station_name, "diesel")
+
             if val is not None:
                 dpl_snapshot = float(val)
+
         except Exception as _e:
             print("⚠️ discount snapshot error:", _e)
 
-        print(f"[BOOK] snapshots: {price_snapshot} {dpl_snapshot} {price_snapshot_updated_at} {dpl_captured_at} (station='{station_name}')")
+        print(f"[BOOK] snapshots: fuel={product_type_display} price={price_snapshot} discount={dpl_snapshot} price_updated_at={price_snapshot_updated_at} discount_captured_at={dpl_captured_at} station='{station_name}'")
 
         row = {
             'account_code': account_code,
@@ -740,7 +765,7 @@ def book():
             'truck_make': driver_data['truck_make'],
             'truck_model': driver_data['truck_model'],
             'number_of_wheels': driver_data['number_of_wheels'],
-            'fuel_type': driver_data['fuel_type'],
+            'fuel_type': product_type_display,
 
             'contact_name': request.form.get('contact_number').split('–')[0].strip(),
             'contact_number': request.form.get('contact_number').split('–')[-1].strip(),
@@ -787,6 +812,7 @@ def book():
         station_table_updated_at=station_table_updated_at,
         min_refuel=min_refuel
     )
+    
 @app.route('/discount-locator')
 def discount_locator():
     try:
