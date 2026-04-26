@@ -44,6 +44,23 @@
     .pending { background-color: #ff9800; }
     .redeemed { background-color: #4caf50; }
 
+    .fuel-banner {
+      background-color: #fff4cc;
+      border: 2px solid #b97800;
+      color: #8B0000;
+      border-radius: 10px;
+      padding: 12px;
+      text-align: center;
+      font-size: 22px;
+      font-weight: 800;
+      margin: 14px 0;
+      text-transform: uppercase;
+    }
+
+    .fuel-banner span {
+      color: #0C1F3F;
+    }
+    
     .voucher-details div {
       margin-bottom: 8px;
       font-size: 15px;
@@ -136,12 +153,27 @@
 <body>
   <div class="voucher-container">
     <div class="voucher-header">
-      <h2>Official Diesel Voucher</h2>
+      <h2>Official Fuel Voucher</h2>
       <div>
         <span class="status-pill {% if voucher['status'] == 'Redeemed' %}redeemed{% else %}pending{% endif %}">
           {{ voucher['status'] }}
         </span>
       </div>
+    </div>
+
+    {% set raw_fuel = voucher.get('fuel_type', 'Diesel') %}
+    {% set raw_fuel = raw_fuel|string|lower %}
+
+    {% if raw_fuel in ['', 'nan', 'diesel'] %}
+      {% set fuel_type = 'Biodiesel' %}
+    {% elif raw_fuel == 'gasoline' %}
+      {% set fuel_type = 'Unleaded Gas' %}
+    {% else %}
+      {% set fuel_type = raw_fuel.title() %}
+    {% endif %}
+
+    <div class="fuel-banner">
+      <span>Fuel Type:</span> {{ fuel_type }}
     </div>
 
     <div class="voucher-details">
@@ -170,7 +202,7 @@
       <ol>
         <li>Check Driver & Vehicle Details</li>
         <li>Click the Redeem Button</li>
-        <li>Pump Diesel to the Vehicle</li>
+        <li>Pump Fuel to the Vehicle</li>
       </ol>
     </div>
     <br>

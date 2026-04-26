@@ -29,12 +29,15 @@ def _to_float(v, default=0.0):
     except Exception:
         return float(default)
 
-def _display_fuel_type(row):
-    fuel_type = row.get("fuel_type", "")
-    fuel_type = "" if fuel_type is None else str(fuel_type).strip()
+def _display_fuel_type(data):
+    fuel_type = data.get("fuel_type", "")
+    fuel_type = "" if fuel_type is None else str(fuel_type).strip().lower()
 
-    if fuel_type == "" or fuel_type.lower() == "nan":
-        return "Diesel"
+    if fuel_type in ["", "nan", "diesel"]:
+        return "Biodiesel"
+
+    if fuel_type == "gasoline":
+        return "Unleaded Gas"
 
     return fuel_type.title()
 
@@ -144,7 +147,7 @@ def build_supplier_pdf(*, vouchers, target_station_ids, stations, logo_path=None
     faq_a = ParagraphStyle("FAQA", parent=styles["BodyText"], leading=14, spaceAfter=8)
 
     # Title/subtitle (left)
-    y = _draw_paragraph(c, "UniFleet – Fuel Refuel Vouchers (Daily PDF)", title_style, x_margin, y, page_w - 2*x_margin)
+    y = _draw_paragraph(c, "UniFleet – Biodiesel / Unleaded Gas Vouchers (Daily PDF)", title_style, x_margin, y, page_w - 2*x_margin)
     ts_mnl = datetime.now(ZoneInfo("Asia/Manila")).strftime("%Y-%m-%d %H:%M")
     y = _draw_paragraph(c, f"Generated: {ts_mnl}", subtitle_style, x_margin, y, page_w - 2*x_margin)
     y -= 6 * mm
@@ -258,7 +261,7 @@ def build_supplier_pdf(*, vouchers, target_station_ids, stations, logo_path=None
             # Redraw title/subtitle on each new page
             y = _draw_paragraph(
                 c,
-                "UniFleet – Fuel Refuel Vouchers (Daily PDF)",
+                "UniFleet – Biodiesel / Unleaded Gas Vouchers (Daily PDF)",
                 title_style,
                 x_margin,
                 y,

@@ -331,14 +331,18 @@
                 <td>{{ row['station'] }}</td>
 
                 {% set _fuel_raw = row.get('fuel_type') %}
-                {% if _fuel_raw in (None, '', 'nan') or (_fuel_raw|string).lower() == 'nan' %}
-                  {% set _fuel_type = 'Diesel' %}
+                {% set _fuel_raw = _fuel_raw|string|lower %}
+
+                {% if _fuel_raw in ['', 'nan', 'diesel'] %}
+                  {% set _fuel_type = 'Biodiesel' %}
+                {% elif _fuel_raw == 'gasoline' %}
+                  {% set _fuel_type = 'Unleaded Gas' %}
                 {% else %}
-                  {% set _fuel_type = _fuel_raw %}
+                  {% set _fuel_type = _fuel_raw.title() %}
                 {% endif %}
 
                 <td>
-                  <span class="fuel-badge {% if (_fuel_type|string).lower() == 'gasoline' %}gasoline{% endif %}">
+                  <span class="fuel-badge {% if _fuel_raw == 'gasoline' %}gasoline{% endif %}">
                     {{ _fuel_type }}
                   </span>
                 </td>

@@ -212,18 +212,18 @@ def _check_admin_key(req):
     return key == ADMIN_KEY
 
 
-def _display_fuel_type(row):
-    """
-    Backward-compatible fuel type display.
-    Defaults to Diesel for old rows where fuel_type is blank, missing, or nan.
-    """
-    fuel_type = row.get("fuel_type", "")
-    fuel_type = "" if fuel_type is None else str(fuel_type).strip()
+def _display_fuel_type(data):
+    fuel_type = data.get("fuel_type", "")
+    fuel_type = "" if fuel_type is None else str(fuel_type).strip().lower()
 
-    if fuel_type == "" or fuel_type.lower() == "nan":
-        return "Diesel"
+    if fuel_type in ["", "nan", "diesel"]:
+        return "Biodiesel"
+
+    if fuel_type == "gasoline":
+        return "Unleaded Gas"
 
     return fuel_type.title()
+
 
 # =========================
 # Home / Dashboard

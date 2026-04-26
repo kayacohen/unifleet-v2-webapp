@@ -94,12 +94,15 @@ def generate_qr_image(voucher_data, row_index):
     final_img.save(filepath)
     print(f"✅ Saved QR voucher: {filepath}")
 
-def _display_fuel_type(voucher_data):
-    fuel_type = voucher_data.get("fuel_type", "")
-    fuel_type = "" if fuel_type is None else str(fuel_type).strip()
+def _display_fuel_type(data):
+    fuel_type = data.get("fuel_type", "")
+    fuel_type = "" if fuel_type is None else str(fuel_type).strip().lower()
 
-    if fuel_type == "" or fuel_type.lower() == "nan":
-        return "Diesel"
+    if fuel_type in ["", "nan", "diesel"]:
+        return "Biodiesel"
+
+    if fuel_type == "gasoline":
+        return "Unleaded Gas"
 
     return fuel_type.title()
 
