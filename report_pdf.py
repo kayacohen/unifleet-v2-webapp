@@ -198,12 +198,18 @@ def build_supplier_pdf(*, vouchers, target_station_ids, stations, logo_path=None
 
     faq_blocks = [
         ("Frequently Asked Questions", faq_heading),
-        ("Q: How do I redeem a voucher?", faq_q),
-        ("Verify the driver and license details, pump the fuel, sign the PDF, then send a photo of the signed PDF to the UniFleet team ASAP on Viber.", faq_a),
-        ("Q: What if a driver goes to the wrong station?", faq_q),
-        ("If within the same station network, a voucher can still be redeemed as long as the driver and vehicle details match.", faq_a),
-        ("Q: Who do I contact if there’s an issue?", faq_q),
-        ("Station staff should contact their station manager. Station managers should contact UniFleet via the Viber group chat.", faq_a),
+
+        ("Q: How do I redeem a voucher? Paano mag-redeem ng voucher?", faq_q),
+        ("Verify the driver and license details, pump the fuel, sign the PDF, then send a photo of the signed PDF to the UniFleet team ASAP on Viber.\n"
+         "Siguraduhing tama ang mga detalye ng lisensya at ng driver, kargahan ang sasakyan, pirmahan ang PDF, picturan ang nakapirmang PDF at ipadala kaagad sa Viber sa UniFleet team.", faq_a),
+
+        ("Q: What if a driver goes to the wrong station? Paano kapag pumunta ang customer sa maling istasyon o branch?", faq_q),
+        ("If within the same station network, a voucher can still be redeemed as long as the driver and vehicle details match.\n"
+         "Maari pa ring kargahan ang sasakyan kapag ang voucher ay para sa tamang network (halimbawa: EcoOil voucher, maaaring gamitin sa ibang EcoOil station).", faq_a),
+
+        ("Q: Who do I contact if there’s an issue? Paano kapag may natatanggap na problema?", faq_q),
+        ("Station staff should contact their station manager. Station managers should contact UniFleet via the Viber group chat.\n"
+         "Kapag ikaw ay station staff, ipaalam ang problema sa station manager. Ang station manager ang makikipag-usap sa UniFleet team gamit ang Viber.", faq_a),
     ]
 
     max_width = page_w - 2 * x_margin

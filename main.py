@@ -471,16 +471,84 @@ def test_success():
 def book():
     customers_path = 'data/customers.csv'
     booking_path = 'data/requested_vouchers.csv'
+
+    station_table = []
+    station_table_updated_at = ""
+
     try:
         # Pull from live price store so new stations auto-appear
         station_objs = price_store.list_stations()  # [{id, name, brand, ...}]
+        station_objs = sorted(
+            [s for s in station_objs if s.get("name")],
+            key=lambda x: str(x.get("name", "")).lower()
+        )
+
         station_names = [s.get("name", "") for s in station_objs]
-        # Case-insensitive alphabetical sort
-        station_names = sorted([n for n in station_names if n], key=lambda x: x.lower())
+
+        # Build read-only station table with discounts
+        discounts = discount_store.get_all() or {}
+
+        import re as _re
+        def _norm_dashes(s: str) -> str:
+            s = str(s or '')
+            return s.replace('—', '-').replace('–', '-').strip().lower()
+
+        def _slug(s: str) -> str:
+            s = _norm_dashes(s)
+            s = _re.sub(r'[^a-z0-9\s-]', '', s)
+            s = _re.sub(r'[\s-]+', '_', s)
+            return s.strip('_')
+
+        latest_updated_at = 0
+
+        for s in station_objs:
+            station_name = s.get("name", "")
+            station_updated_at = int(s.get("updated_at") or 0)
+            if station_updated_at > latest_updated_at:
+                latest_updated_at = station_updated_at
+
+            discount_value = None
+
+            # Match discount by exact name first
+            val = discounts.get(station_name)
+
+            # Fallback to normalized matching
+            if val is None:
+                target_norm = _norm_dashes(station_name)
+                target_slug = _slug(station_name)
+                for k, v in discounts.items():
+                    if _norm_dashes(k) == target_norm or _slug(k) == target_slug:
+                        val = v
+                        break
+
+            if val is not None:
+                try:
+                    discount_value = f"{float(val):.2f}"
+                except Exception:
+                    discount_value = None
+
+            try:
+                price_value = f"{float(s.get('price_php_per_liter') or 0):.2f}"
+            except Exception:
+                price_value = "0.00"
+
+            station_table.append({
+                "name": station_name,
+                "price_php_per_liter": price_value,
+                "discount_per_liter": discount_value,
+            })
+
+        if latest_updated_at > 0:
+            station_table_updated_at = datetime.fromtimestamp(
+                latest_updated_at,
+                tz=ZoneInfo("Asia/Manila")
+            ).strftime("%Y-%m-%d %H:%M")
+
     except Exception as e:
         print(f"⚠️ Error loading stations: {e}")
         station_names = []
-
+        station_table = []
+        station_table_updated_at = ""
 
     # Compute Manila "now + 24h" for form hint and validation baseline
     manila = ZoneInfo("Asia/Manila")
@@ -499,11 +567,27 @@ def book():
 
         if not request.form.get('station'):
             if rows.empty:
-                return render_template('book.html', customer=None, presets=[], station_names=station_names, min_refuel=min_refuel)
+                return render_template(
+                    'book.html',
+                    customer=None,
+                    presets=[],
+                    station_names=station_names,
+                    station_table=station_table,
+                    station_table_updated_at=station_table_updated_at,
+                    min_refuel=min_refuel
+                )
             base = rows.iloc[0].to_dict()
             preset_path = f"data/presets/{account_code}_presets.csv"
             presets = pd.read_csv(preset_path, encoding='utf-8-sig').to_dict(orient='records') if os.path.isfile(preset_path) else []
-            return render_template('book.html', customer=base, presets=presets, station_names=station_names, min_refuel=min_refuel)
+            return render_template(
+                'book.html',
+                customer=base,
+                presets=presets,
+                station_names=station_names,
+                station_table=station_table,
+                station_table_updated_at=station_table_updated_at,
+                min_refuel=min_refuel
+            )
 
         driver_mode = request.form.get('driver_mode')
         use_new = driver_mode == 'new'
@@ -512,7 +596,16 @@ def book():
             base = rows.iloc[0].to_dict()
             preset_path = f"data/presets/{account_code}_presets.csv"
             presets = pd.read_csv(preset_path, encoding='utf-8-sig').to_dict(orient='records') if os.path.isfile(preset_path) else []
-            return render_template('book.html', customer=base, presets=presets, station_names=station_names, form_values=request.form, min_refuel=min_refuel)
+            return render_template(
+                'book.html',
+                customer=base,
+                presets=presets,
+                station_names=station_names,
+                station_table=station_table,
+                station_table_updated_at=station_table_updated_at,
+                form_values=request.form,
+                min_refuel=min_refuel
+            )
 
         if use_new:
             driver_data = {
@@ -544,24 +637,32 @@ def book():
                 base = rows.iloc[0].to_dict() if not rows.empty else None
                 preset_path = f"data/presets/{account_code}_presets.csv"
                 presets = pd.read_csv(preset_path, encoding='utf-8-sig').to_dict(orient='records') if os.path.isfile(preset_path) else []
-                return render_template('book.html',
-                                       customer=base,
-                                       presets=presets,
-                                       station_names=station_names,
-                                       form_values=request.form,
-                                       min_refuel=min_refuel)
+                return render_template(
+                    'book.html',
+                    customer=base,
+                    presets=presets,
+                    station_names=station_names,
+                    station_table=station_table,
+                    station_table_updated_at=station_table_updated_at,
+                    form_values=request.form,
+                    min_refuel=min_refuel
+                )
         except Exception:
             # If parsing fails, treat as invalid
             flash("Please enter a valid Refuel Date & Time (YYYY-MM-DDTHH:MM).", "error")
             base = rows.iloc[0].to_dict() if not rows.empty else None
             preset_path = f"data/presets/{account_code}_presets.csv"
             presets = pd.read_csv(preset_path, encoding='utf-8-sig').to_dict(orient='records') if os.path.isfile(preset_path) else []
-            return render_template('book.html',
-                                   customer=base,
-                                   presets=presets,
-                                   station_names=station_names,
-                                   form_values=request.form,
-                                   min_refuel=min_refuel)
+            return render_template(
+                'book.html',
+                customer=base,
+                presets=presets,
+                station_names=station_names,
+                station_table=station_table,
+                station_table_updated_at=station_table_updated_at,
+                form_values=request.form,
+                min_refuel=min_refuel
+            )
 
         # ---- CAPTURE BOOKING-TIME SNAPSHOTS (price & discount) ----
         station_name = (request.form.get('station') or '').strip()
@@ -588,15 +689,18 @@ def book():
             target_slug = _slug(station_name)
             for s in stations:
                 if _norm_dashes(s.get("id")) == target_norm:
-                    match = s; break
+                    match = s
+                    break
             if match is None:
                 for s in stations:
                     if _norm_dashes(s.get("name")) == target_norm:
-                        match = s; break
+                        match = s
+                        break
             if match is None:
                 for s in stations:
                     if _slug(s.get("name")) == target_slug:
-                        match = s; break
+                        match = s
+                        break
             if match:
                 price_snapshot = float(match.get("price_php_per_liter") or 0)
                 price_snapshot_updated_at = int(match.get("updated_at") or 0)
@@ -612,7 +716,8 @@ def book():
                 all_discounts = discount_store.get_all() or {}
                 for k, v in all_discounts.items():
                     if _norm_dashes(k) == target_norm or _slug(k) == target_slug:
-                        val = v; break
+                        val = v
+                        break
             if val is not None:
                 dpl_snapshot = float(val)
         except Exception as _e:
@@ -669,8 +774,15 @@ def book():
         return render_template('booking_success.html', payment_info=PAYMENT_INFO, due_amount=due_amount)
 
     # GET: blank form (include min_refuel hint)
-    return render_template('book.html', customer=None, presets=[], station_names=station_names, min_refuel=min_refuel)
-
+    return render_template(
+        'book.html',
+        customer=None,
+        presets=[],
+        station_names=station_names,
+        station_table=station_table,
+        station_table_updated_at=station_table_updated_at,
+        min_refuel=min_refuel
+    )
 @app.route('/discount-locator')
 def discount_locator():
     try:

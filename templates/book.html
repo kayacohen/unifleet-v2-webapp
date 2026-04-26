@@ -86,6 +86,57 @@
     details p {
       margin: 0.3rem 0;
     }
+
+    .discount-table-wrap {
+      margin-top: 1rem;
+      background: white;
+      border: 1px solid #cfe0f5;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    .discount-table-header {
+      padding: 0.8rem 1rem;
+      background: #f4f8fd;
+      border-bottom: 1px solid #dbe7f5;
+      font-size: 0.9rem;
+      color: #4a5a6a;
+    }
+
+    .discount-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.94rem;
+    }
+
+    .discount-table th,
+    .discount-table td {
+      padding: 0.85rem 0.8rem;
+      border-bottom: 1px solid #eef3f8;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    .discount-table th {
+      background: #ffffff;
+      color: #0054a6;
+      font-weight: 700;
+      font-size: 0.9rem;
+    }
+
+    .discount-table tr:last-child td {
+      border-bottom: none;
+    }
+
+    .discount-value {
+      font-weight: 700;
+      color: #ff5c00;
+    }
+
+    .price-value {
+      font-weight: 600;
+      color: #1f2d3d;
+    }
   </style>
 </head>
 <body>
@@ -139,9 +190,45 @@
         <h3 style="margin-top: 0; color: #0054a6;">How to Find Discounts</h3>
         <ol style="margin-bottom: 1rem; padding-left: 1.5rem;">
           <li>Find a station on the map below</li>
-          <li>Click to view the discount and max vehicle wheels</li>
+          <li>Review the live station price and discount table</li>
           <li>Select station in drop down</li>
         </ol>
+
+        {% if station_table %}
+        <div class="discount-table-wrap">
+          <div class="discount-table-header">
+            <strong>Live Station Pricing & Discounts</strong><br>
+            Last updated:
+            <strong>{{ station_table_updated_at if station_table_updated_at else '—' }}</strong>
+            <span style="color:#6b7785;">(Asia/Manila)</span>
+          </div>
+          <table class="discount-table">
+            <thead>
+              <tr>
+                <th>Station</th>
+                <th>Price</th>
+                <th>Discount</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in station_table %}
+              <tr>
+                <td>{{ row.name }}</td>
+                <td class="price-value">₱{{ row.price_php_per_liter }}</td>
+                <td class="discount-value">
+                  {% if row.discount_per_liter not in [None, '', 'nan'] %}
+                    ₱{{ row.discount_per_liter }}/L
+                  {% else %}
+                    —
+                  {% endif %}
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% endif %}
+
         <iframe src="https://www.google.com/maps/d/u/1/embed?mid=1-kTfMqXppZshSnH0n4KyTjsBV9Af_9k&ehbc=2E312F&noprof=1" loading="lazy"></iframe>
       </div>
 
