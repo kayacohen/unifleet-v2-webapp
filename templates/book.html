@@ -138,6 +138,60 @@
       font-weight: 600;
       color: #1f2d3d;
     }
+
+    .preview-card {
+      margin-top: 1rem;
+      margin-bottom: 1rem;
+      padding: 1.2rem;
+      border-radius: 10px;
+      background: #fffdf3;
+      border: 1px solid #f2d675;
+    }
+
+    .preview-card h3 {
+      margin-top: 0;
+      color: #0054a6;
+    }
+
+    .preview-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 1rem;
+      padding: 0.35rem 0;
+      border-bottom: 1px solid #f4e9b5;
+    }
+
+    .preview-row:last-child {
+      border-bottom: none;
+    }
+
+    .preview-label {
+      color: #4a5a6a;
+    }
+
+    .preview-value {
+      font-weight: 700;
+      color: #0C1F3F;
+    }
+
+    .preview-savings {
+      color: #2e7d32;
+    }
+
+    .preview-total {
+      margin-top: 0.7rem;
+      padding: 0.8rem;
+      background: #fff176;
+      border-radius: 8px;
+      font-size: 1.05rem;
+    }
+
+    .preview-muted {
+      font-size: 0.82rem;
+      color: #777;
+      margin-top: 0.6rem;
+    }
+    
   </style>
 </head>
 <body>
@@ -179,19 +233,6 @@
 
       <label for="contact_number">Name & Mobile Number [for Voucher Delivery]</label>
       <input type="text" name="contact_number" value="{{ customer.contact_name }} – {{ customer.contact_number }}" class="full-width-input" required>
-
-      <label for="station">Select a Station</label>
-      <select name="station" id="station" class="full-width-input" required>
-        {% for name in station_names %}
-          <option value="{{ name }}">{{ name }}</option>
-        {% endfor %}
-      </select>
-
-      <label for="product_type">Fuel Type</label>
-      <select name="product_type" id="product_type" class="full-width-input" required>
-        <option value="Diesel" selected>Biodiesel</option>
-        <option value="Gasoline">Unleaded Gas</option>
-      </select>
 
       <div style="background-color: #e6f0fb; padding: 1.5rem; border-radius: 8px; margin: 1.5rem 0;">
         <h3 style="margin-top: 0; color: #0054a6;">How to Find Discounts</h3>
@@ -265,9 +306,84 @@
         <iframe src="https://www.google.com/maps/d/u/1/embed?mid=1-kTfMqXppZshSnH0n4KyTjsBV9Af_9k&ehbc=2E312F&noprof=1" loading="lazy"></iframe>
       </div>
 
+      <label for="product_type">Fuel Type</label>
+      <select name="product_type" id="product_type" class="full-width-input" required>
+        <option value="Diesel" selected>Biodiesel</option>
+        <option value="Gasoline">Unleaded Gas</option>
+      </select>
+      
+      <label for="station">Select a Station</label>
+      <select name="station" id="station" class="full-width-input" required>
+        {% for name in station_names %}
+          <option value="{{ name }}">{{ name }}</option>
+        {% endfor %}
+      </select>
+      
       <label for="requested_amount_php">Prepaid Load Amount (in PHP)</label>
-      <input type="number" name="requested_amount_php" class="full-width-input" required
-      value="{{ form_values.requested_amount_php if form_values else '' }}">
+      <input
+        type="number"
+        name="requested_amount_php"
+        id="requested_amount_php"
+        class="full-width-input"
+        required
+        min="1"
+        step="0.01"
+        value="{{ form_values.requested_amount_php if form_values else '' }}"
+      >
+
+      <div class="preview-card" id="transactionPreview" style="display: none;">
+        <h3>Transaction Preview</h3>
+
+        <div class="preview-row">
+          <span class="preview-label">Selected Station</span>
+          <span class="preview-value" id="previewStation">—</span>
+        </div>
+
+        <div class="preview-row">
+          <span class="preview-label">Fuel Type</span>
+          <span class="preview-value" id="previewFuel">—</span>
+        </div>
+
+        <div class="preview-row">
+          <span class="preview-label">Live Price</span>
+          <span class="preview-value" id="previewPrice">—</span>
+        </div>
+
+        <div class="preview-row">
+          <span class="preview-label">Discount</span>
+          <span class="preview-value preview-savings" id="previewDiscount">—</span>
+        </div>
+
+        <div class="preview-row">
+          <span class="preview-label">You Pay</span>
+          <span class="preview-value" id="previewPay">—</span>
+        </div>
+
+        <div class="preview-row">
+          <span class="preview-label">Estimated Liters</span>
+          <span class="preview-value" id="previewLiters">—</span>
+        </div>
+
+        <div class="preview-row">
+          <span class="preview-label">Free Fuel Value</span>
+          <span class="preview-value preview-savings" id="previewFreeValue">—</span>
+        </div>
+
+        <div class="preview-total">
+          <div class="preview-row">
+            <span class="preview-label"><strong>Total Voucher Value</strong></span>
+            <span class="preview-value" id="previewTotalValue">—</span>
+          </div>
+          <div class="preview-row">
+            <span class="preview-label"><strong>Total Liters to Pump</strong></span>
+            <span class="preview-value" id="previewTotalLiters">—</span>
+          </div>
+        </div>
+
+        <div class="preview-muted">
+          Estimated only. Final values are locked when you submit the booking.
+        </div>
+      </div>
 
       <details>
         <summary>How Discounts Work</summary>
@@ -360,6 +476,97 @@
 
     modeSelect.addEventListener('change', toggleDriverMode);
     window.addEventListener('load', toggleDriverMode);
+  </script>
+
+  <script>
+    const stationPricingData = [
+      {% for row in station_table or [] %}
+      {
+        name: {{ row.name|tojson }},
+        dieselPrice: {{ row.diesel_price|tojson }},
+        dieselDiscount: {{ row.diesel_discount|tojson }},
+        gasolinePrice: {{ row.gasoline_price|tojson }},
+        gasolineDiscount: {{ row.gasoline_discount|tojson }}
+      }{% if not loop.last %},{% endif %}
+      {% endfor %}
+    ];
+
+    function peso(value) {
+      return '₱' + Number(value).toLocaleString('en-PH', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+      });
+    }
+
+    function liters(value) {
+      return Number(value).toLocaleString('en-PH', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+      }) + ' L';
+    }
+
+    function fuelDisplayName(rawFuel) {
+      return rawFuel === 'Gasoline' ? 'Unleaded Gas' : 'Biodiesel';
+    }
+
+    function updateTransactionPreview() {
+      const stationSelect = document.getElementById('station');
+      const fuelSelect = document.getElementById('product_type');
+      const amountInput = document.getElementById('requested_amount_php');
+      const preview = document.getElementById('transactionPreview');
+
+      if (!stationSelect || !fuelSelect || !amountInput || !preview) return;
+
+      const stationName = stationSelect.value;
+      const fuelType = fuelSelect.value;
+      const amount = parseFloat(amountInput.value);
+
+      if (!stationName || !fuelType || !amount || amount <= 0) {
+        preview.style.display = 'none';
+        return;
+      }
+
+      const station = stationPricingData.find(s => s.name === stationName);
+      if (!station) {
+        preview.style.display = 'none';
+        return;
+      }
+
+      const price = fuelType === 'Gasoline'
+        ? parseFloat(station.gasolinePrice)
+        : parseFloat(station.dieselPrice);
+
+      const discount = fuelType === 'Gasoline'
+        ? parseFloat(station.gasolineDiscount)
+        : parseFloat(station.dieselDiscount);
+
+      if (!price || price <= 0 || isNaN(price) || isNaN(discount)) {
+        preview.style.display = 'none';
+        return;
+      }
+
+      const estimatedLiters = amount / price;
+      const freeFuelValue = estimatedLiters * discount;
+      const totalVoucherValue = amount + freeFuelValue;
+      const totalLitersToPump = totalVoucherValue / price;
+
+      document.getElementById('previewStation').textContent = stationName;
+      document.getElementById('previewFuel').textContent = fuelDisplayName(fuelType);
+      document.getElementById('previewPrice').textContent = peso(price) + '/L';
+      document.getElementById('previewDiscount').textContent = peso(discount) + ' OFF/L';
+      document.getElementById('previewPay').textContent = peso(amount);
+      document.getElementById('previewLiters').textContent = liters(estimatedLiters);
+      document.getElementById('previewFreeValue').textContent = peso(freeFuelValue);
+      document.getElementById('previewTotalValue').textContent = peso(totalVoucherValue);
+      document.getElementById('previewTotalLiters').textContent = liters(totalLitersToPump);
+
+      preview.style.display = 'block';
+    }
+
+    window.addEventListener('load', updateTransactionPreview);
+    document.getElementById('station')?.addEventListener('change', updateTransactionPreview);
+    document.getElementById('product_type')?.addEventListener('change', updateTransactionPreview);
+    document.getElementById('requested_amount_php')?.addEventListener('input', updateTransactionPreview);
   </script>
 
   {% if not presets %}

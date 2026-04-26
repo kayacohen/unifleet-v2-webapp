@@ -813,8 +813,40 @@ def book():
             updated = pd.concat([existing, pd.DataFrame([driver_data])], ignore_index=True)
             updated.to_csv(preset_path, index=False, encoding='utf-8-sig')
 
-        due_amount = request.form.get('requested_amount_php')
-        return render_template('booking_success.html', payment_info=PAYMENT_INFO, due_amount=due_amount)
+        due_amount = float(request.form.get('requested_amount_php') or 0)
+
+        liters_requested = 0.0
+        discount_total = 0.0
+        total_voucher_value = due_amount
+        total_liters_to_pump = 0.0
+
+        try:
+            if price_snapshot > 0:
+                liters_requested = round(due_amount / price_snapshot, 2)
+                discount_total = round(liters_requested * dpl_snapshot, 2)
+                total_voucher_value = round(due_amount + discount_total, 2)
+                total_liters_to_pump = round(total_voucher_value / price_snapshot, 2)
+        except Exception:
+            pass
+
+        success_preview = {
+            "station": station_name,
+            "fuel_type": "Unleaded Gas" if product_type_display == "Gasoline" else "Biodiesel",
+            "price": price_snapshot,
+            "discount": dpl_snapshot,
+            "you_pay": due_amount,
+            "liters_requested": liters_requested,
+            "free_fuel_value": discount_total,
+            "total_voucher_value": total_voucher_value,
+            "total_liters_to_pump": total_liters_to_pump,
+        }
+
+        return render_template(
+            'booking_success.html',
+            payment_info=PAYMENT_INFO,
+            due_amount=f"{due_amount:,.2f}",
+            preview=success_preview
+        )
 
     # GET: blank form (include min_refuel hint)
     return render_template(

@@ -98,6 +98,53 @@
       font-size: 0.92rem;
       color: #555;
     }
+
+    .summary-box {
+      background: #fffdf3;
+      border: 1px solid #f2d675;
+      border-radius: 10px;
+      padding: 14px;
+      margin: 16px 0 20px;
+    }
+
+    .summary-box h3 {
+      margin: 0 0 10px;
+      color: #0054a6;
+    }
+
+    .summary-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 1rem;
+      padding: 6px 0;
+      border-bottom: 1px solid #f4e9b5;
+    }
+
+    .summary-row:last-child {
+      border-bottom: none;
+    }
+
+    .summary-label {
+      color: #4a5a6a;
+    }
+
+    .summary-value {
+      font-weight: 700;
+      color: #0C1F3F;
+      text-align: right;
+    }
+
+    .summary-savings {
+      color: #2e7d32;
+    }
+
+    .summary-total {
+      margin-top: 8px;
+      padding: 10px;
+      background: #fff176;
+      border-radius: 8px;
+    }
+    
   </style>
 </head>
 <body>
@@ -113,8 +160,9 @@
       <p class="success-note">Your refuel request is now pending payment. Complete the payment below to obtain your refuel voucher. </p>
 
       <div class="payment-instructions">
-        <h2 style="margin-top:0; color:#0054a6;">Next Step: Send Payment & Forward Confirmation Screenshot to 0945-149-2369</h2>
-        <p class="amount-due">Amount Due: ₱{{ due_amount }} (InstaPay or PESONet)</p>
+        <h2 style="margin-top:0; color:#0054a6;">Next Step: Make Payment to Receive Voucher</h2>
+        <p class="amount-due">Amount Due: ₱{{ due_amount }}</p>
+        
 
         <div class="payment-box">
           <h3>🏦 {{ payment_info.gotyme.label }}</h3>
@@ -123,7 +171,52 @@
             <strong>Account Number:</strong>
             <span id="gotyme-account">{{ payment_info.gotyme.account_number }}</span>
           </p>
+
+          <ol style="margin-top: 12px; padding-left: 18px; font-size: 0.95rem; color: #b00020; font-weight: 600;">
+            <li>Make payment via <strong>InstaPay or PESONet</strong></li>
+            <li>Forward confirmation screenshot to <strong>Viber: 0945-149-2369</strong></li>
+            <li>Wait for immediate voucher confirmation from <strong>UniFleet Admin</strong></li>
+          </ol>
         </div>
+
+        {% if preview %}
+        <div class="summary-box">
+          <h3>Booking Summary</h3>
+
+          <div class="summary-row">
+            <span class="summary-label">Station</span>
+            <span class="summary-value">{{ preview.station }}</span>
+          </div>
+
+          <div class="summary-row">
+            <span class="summary-label">Fuel Type</span>
+            <span class="summary-value">{{ preview.fuel_type }}</span>
+          </div>
+
+          <div class="summary-row">
+            <span class="summary-label">Free Fuel Value</span>
+            <span class="summary-value summary-savings">₱{{ "{:,.2f}".format(preview.free_fuel_value|float) }}</span>
+          </div>
+
+          <div class="summary-total">
+            <div class="summary-row">
+              <span class="summary-label"><strong>You Pay</strong></span>
+              <span class="summary-value">₱{{ "{:,.2f}".format(preview.you_pay|float) }}</span>
+            </div>
+
+            <div class="summary-row">
+              <span class="summary-label"><strong>Total Voucher Value</strong></span>
+              <span class="summary-value">₱{{ "{:,.2f}".format(preview.total_voucher_value|float) }}</span>
+            </div>
+
+            <div class="summary-row">
+              <span class="summary-label"><strong>Total Liters to Pump</strong></span>
+              <span class="summary-value">{{ "{:,.2f}".format(preview.total_liters_to_pump|float) }} L</span>
+            </div>
+          </div>
+          </div>
+        </div>
+        {% endif %}
 
       <div class="btn-row">
         <a href="{{ url_for('book') }}" class="btn btn-primary">← Make another booking</a>
