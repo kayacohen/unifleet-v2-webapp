@@ -813,40 +813,7 @@ def book():
             updated = pd.concat([existing, pd.DataFrame([driver_data])], ignore_index=True)
             updated.to_csv(preset_path, index=False, encoding='utf-8-sig')
 
-        due_amount = float(request.form.get('requested_amount_php') or 0)
-
-        liters_requested = 0.0
-        discount_total = 0.0
-        total_voucher_value = due_amount
-        total_liters_to_pump = 0.0
-
-        try:
-            if price_snapshot > 0:
-                liters_requested = round(due_amount / price_snapshot, 2)
-                discount_total = round(liters_requested * dpl_snapshot, 2)
-                total_voucher_value = round(due_amount + discount_total, 2)
-                total_liters_to_pump = round(total_voucher_value / price_snapshot, 2)
-        except Exception:
-            pass
-
-        success_preview = {
-            "station": station_name,
-            "fuel_type": "Unleaded Gas" if product_type_display == "Gasoline" else "Biodiesel",
-            "price": price_snapshot,
-            "discount": dpl_snapshot,
-            "you_pay": due_amount,
-            "liters_requested": liters_requested,
-            "free_fuel_value": discount_total,
-            "total_voucher_value": total_voucher_value,
-            "total_liters_to_pump": total_liters_to_pump,
-        }
-
-        return render_template(
-            'booking_success.html',
-            payment_info=PAYMENT_INFO,
-            due_amount=f"{due_amount:,.2f}",
-            preview=success_preview
-        )
+        return redirect(url_for('booking_success', voucher_id=created.get("voucher_id")))
 
     # GET: blank form (include min_refuel hint)
     return render_template(
@@ -858,7 +825,50 @@ def book():
         station_table_updated_at=station_table_updated_at,
         min_refuel=min_refuel
     )
-    
+
+@app.route('/booking-success/<voucher_id>', methods=['GET'])
+def booking_success(voucher_id):
+    r = repo.get_voucher(voucher_id)
+    if not r:
+        return "<h2>Booking not found.</h2>", 404
+
+    due_amount = float(r.get("requested_amount_php") or 0)
+    price = float(r.get("price_snapshot_php_per_liter") or 0)
+    discount = float(r.get("discount_snapshot_php_per_liter") or 0)
+
+    liters_requested = 0.0
+    discount_total = 0.0
+    total_voucher_value = due_amount
+    total_liters_to_pump = 0.0
+
+    try:
+        if price > 0:
+            liters_requested = round(due_amount / price, 2)
+            discount_total = round(liters_requested * discount, 2)
+            total_voucher_value = round(due_amount + discount_total, 2)
+            total_liters_to_pump = round(total_voucher_value / price, 2)
+    except Exception:
+        pass
+
+    raw_fuel = str(r.get("fuel_type") or "Diesel").strip().lower()
+    display_fuel = "Unleaded Gas" if raw_fuel == "gasoline" else "Biodiesel"
+
+    preview = {
+        "station": r.get("station", ""),
+        "fuel_type": display_fuel,
+        "you_pay": due_amount,
+        "free_fuel_value": discount_total,
+        "total_voucher_value": total_voucher_value,
+        "total_liters_to_pump": total_liters_to_pump,
+    }
+
+    return render_template(
+        'booking_success.html',
+        payment_info=PAYMENT_INFO,
+        due_amount=f"{due_amount:,.2f}",
+        preview=preview
+    )
+
 @app.route('/discount-locator')
 def discount_locator():
     try:
