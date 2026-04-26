@@ -975,43 +975,71 @@ discount_store = DiscountStore()
 def admin_prices():
     if not _check_admin_key(request):
         return abort(403)
+
     stations = price_store.list_stations()
     stations = sorted(stations, key=lambda s: (s.get("brand",""), s.get("name","")))
     discounts = discount_store.get_all()
+
     return render_template("admin_prices.html", stations=stations, discounts=discounts)
+
 
 @app.route("/admin/prices/update", methods=["POST"])
 def admin_prices_update():
     if not _check_admin_key(request):
         return jsonify({"ok": False, "error": "forbidden"}), 403
+
     try:
         payload = request.get_json(force=True) or {}
+
         station_id = str(payload.get("station_id", "")).strip()
+        fuel_type = str(payload.get("fuel_type", "diesel")).strip().lower()
         new_price = float(payload.get("price", 0))
 
-        before = price_store.get_station(station_id) or {}
-        old_price = before.get("price_php_per_liter")
+        if fuel_type not in ("diesel", "gasoline"):
+            fuel_type = "diesel"
 
-        updated = price_store.set_price(station_id, new_price)
+        before = price_store.get_station(station_id) or {}
+        before_fuel_prices = before.get("fuel_prices") or {}
+        before_fuel_info = before_fuel_prices.get(fuel_type) or {}
+
+        if fuel_type == "diesel":
+            old_price = before_fuel_info.get("price_php_per_liter", before.get("price_php_per_liter"))
+        else:
+            old_price = before_fuel_info.get("price_php_per_liter")
+
+        updated = price_store.set_fuel_price(station_id, fuel_type, new_price)
+
+        updated_fuel_prices = updated.get("fuel_prices") or {}
+        updated_fuel_info = updated_fuel_prices.get(fuel_type) or {}
+
+        updated_price = updated_fuel_info.get("price_php_per_liter")
+        updated_at = updated_fuel_info.get("updated_at")
 
         append_price_history(
             station_id=station_id,
             old_price=old_price,
-            new_price=updated["price_php_per_liter"],
-            updated_unix=updated["updated_at"]
+            new_price=updated_price,
+            updated_unix=updated_at
         )
 
         return jsonify({
             "ok": True,
             "station_id": station_id,
-            "price_php_per_liter": updated["price_php_per_liter"],
-            "updated_at": updated["updated_at"],
+            "fuel_type": fuel_type,
+            "price_php_per_liter": updated_price,
+            "updated_at": updated_at,
+
+            # Backward-compatible fields for existing frontend behavior
+            "diesel_price_php_per_liter": updated.get("price_php_per_liter"),
+            "diesel_updated_at": updated.get("updated_at"),
         })
+
     except KeyError as e:
         return jsonify({"ok": False, "error": str(e)}), 404
     except ValueError as e:
         return jsonify({"ok": False, "error": str(e)}), 400
-    except Exception:
+    except Exception as e:
+        print(f"⚠️ admin_prices_update error: {e}")
         return jsonify({"ok": False, "error": "server_error"}), 500
 
 # Read-only API for previews
@@ -1030,7 +1058,11 @@ def admin_discounts_update():
 
     key = request.args.get("key", "").strip()
     station = (request.form.get("station") or "").strip()
+    fuel_type = (request.form.get("fuel_type") or "").strip().lower()
     raw_value = (request.form.get("discount_per_liter") or "").strip()
+
+    if fuel_type not in ("diesel", "gasoline"):
+        fuel_type = None
 
     def _back():
         target = url_for("admin_prices")
@@ -1057,8 +1089,17 @@ def admin_discounts_update():
         return _back()
 
     try:
-        discount_store.set(station, value, actor="admin", reason="manual update")
-        flash(f"Saved discount {value:.2f} PHP/L for “{station}”.", "success")
+        discount_store.set(
+            station,
+            value,
+            actor="admin",
+            reason="manual update",
+            fuel_type=fuel_type
+        )
+
+        label = fuel_type.capitalize() if fuel_type else "Station"
+        flash(f"Saved {label} discount {value:.2f} PHP/L for “{station}”.", "success")
+
     except DiscountValueError as e:
         flash(str(e), "error")
     except Exception as e:

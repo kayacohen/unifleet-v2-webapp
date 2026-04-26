@@ -3,16 +3,17 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>UniFleet — Admin: Live Prices</title>
+  <title>UniFleet — Admin: Live Fuel Prices</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 24px; }
     h1 { margin-bottom: 12px; }
     table { border-collapse: collapse; width: 100%; }
-    th, td { border: 1px solid #e5e7eb; padding: 8px; text-align: left; }
+    th, td { border: 1px solid #e5e7eb; padding: 8px; text-align: left; vertical-align: top; }
     th { background: #f9fafb; font-weight: 600; }
     tr:hover { background: #fcfcfc; }
     .price-input { width: 110px; }
+    .discount-input { width: 110px; }
     .btn { cursor: pointer; padding: 6px 10px; border: 1px solid #e5e7eb; border-radius: 6px; background: #111827; color: white; }
     .btn:disabled { background: #9ca3af; cursor: not-allowed; }
     .tag { font-size: 12px; padding: 2px 6px; border: 1px solid #e5e7eb; border-radius: 999px; background: #f3f4f6; }
@@ -21,31 +22,37 @@
     .muted { color: #6b7280; font-size: 14px; }
     .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; }
 
-    /* stale indicators (existing) */
     .badge-stale {
       display: inline-block;
       padding: 2px 8px;
       border-radius: 9999px;
       font-size: 12px;
-      background: #FEE2E2; /* red-100 */
-      color: #991B1B;      /* red-800 */
+      background: #FEE2E2;
+      color: #991B1B;
       margin-left: 8px;
     }
+
     .stale-row {
-      background: #FFF7ED;  /* amber-50 */
+      background: #FFF7ED;
     }
 
-    /* discount UI helpers */
-    .discount-input { width: 110px; }
     .stack { display: flex; flex-direction: column; gap: 4px; }
     .badge { display: inline-block; padding: 2px 6px; border: 1px solid #e5e7eb; border-radius: 999px; background: #f3f4f6; font-size: 12px; }
+    .fuel-box { display: flex; flex-direction: column; gap: 8px; min-width: 220px; }
+    .fuel-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .fuel-label { font-size: 12px; font-weight: 700; color: #374151; min-width: 64px; }
+    .diesel-label { color: #0054a6; }
+    .gasoline-label { color: #b45309; }
+    .save-cell { text-align: center; vertical-align: middle; }
+    .save-station-btn { width: 120px; }
   </style>
 </head>
 <body>
-  <h1>Admin — Live Diesel Prices</h1>
+  <h1>Admin — Live Fuel Prices</h1>
   <div class="row" style="gap:12px; margin-bottom:12px;">
     <span class="tag">Pre-DB JSON store</span>
     <span class="muted">Edits are saved instantly to <span class="mono">data/station_prices.json</span>.</span>
+    <span class="tag">Diesel + Gasoline</span>
   </div>
 
   <table>
@@ -54,23 +61,49 @@
         <th>Brand</th>
         <th>Station</th>
         <th>Location</th>
-        <th>Price (PHP/L)</th>
+        <th>Fuel Prices (PHP/L)</th>
         <th>Updated</th>
-        <th>Discount (PHP/L)</th>
+        <th>Discounts (PHP/L)</th>
+        <th>Save</th>
       </tr>
     </thead>
     <tbody>
       {% for s in stations %}
-      {% set current_discount = (discounts.get(s.name) if discounts is defined and discounts else None) %}
-      <tr data-station-id="{{ s.id }}">
+      {% set diesel_info = (s.fuel_prices.diesel if s.fuel_prices is defined and s.fuel_prices and s.fuel_prices.diesel is defined else None) %}
+      {% set gasoline_info = (s.fuel_prices.gasoline if s.fuel_prices is defined and s.fuel_prices and s.fuel_prices.gasoline is defined else None) %}
+
+      {% set diesel_price = (diesel_info.price_php_per_liter if diesel_info else s.price_php_per_liter) %}
+      {% set gasoline_price = (gasoline_info.price_php_per_liter if gasoline_info else '') %}
+
+      {% set diesel_updated_at = (diesel_info.updated_at if diesel_info else s.updated_at) %}
+      {% set gasoline_updated_at = (gasoline_info.updated_at if gasoline_info else '') %}
+
+      {% set raw_discount = (discounts.get(s.name) if discounts is defined and discounts else None) %}
+      {% if raw_discount is mapping %}
+        {% set diesel_discount = raw_discount.get('diesel') %}
+        {% set gasoline_discount = raw_discount.get('gasoline') %}
+      {% else %}
+        {% set diesel_discount = raw_discount %}
+        {% set gasoline_discount = none %}
+      {% endif %}
+
+      <tr data-station-id="{{ s.id }}" data-station-name="{{ s.name }}">
         <td>{{ s.brand }}</td>
         <td>
           <div class="stack">
             <span>{{ s.name }}</span>
             <span class="badge">
-              Discount:
-              {% if current_discount is not none %}
-                {{ '%.2f'|format(current_discount) }} PHP/L
+              Diesel Discount:
+              {% if diesel_discount is not none %}
+                {{ '%.2f'|format(diesel_discount) }} PHP/L
+              {% else %}
+                none
+              {% endif %}
+            </span>
+            <span class="badge">
+              Gasoline Discount:
+              {% if gasoline_discount is not none %}
+                {{ '%.2f'|format(gasoline_discount) }} PHP/L
               {% else %}
                 none
               {% endif %}
@@ -79,32 +112,67 @@
         </td>
         <td>{{ s.location }}</td>
 
-        <!-- PRICE cell: input + Save button side-by-side -->
         <td>
-          <div class="row">
-            <input class="price-input" type="number" step="0.01" min="0.01" max="200"
-                   value="{{ '%.2f'|format(s.price_php_per_liter) }}" />
-            <button class="btn save-btn" type="button">Save</button>
+          <div class="fuel-box">
+            <div class="fuel-row">
+              <span class="fuel-label diesel-label">Diesel</span>
+              <input class="price-input diesel-price-input" type="number" step="0.01" min="0.01" max="200"
+                     value="{{ '%.2f'|format(diesel_price) }}" />
+            </div>
+
+            <div class="fuel-row">
+              <span class="fuel-label gasoline-label">Gasoline</span>
+              <input class="price-input gasoline-price-input" type="number" step="0.01" min="0.01" max="200"
+                     value="{% if gasoline_price not in [None, ''] %}{{ '%.2f'|format(gasoline_price) }}{% endif %}" />
+            </div>
           </div>
         </td>
 
         <td class="updated-at">
-          {% if s.updated_at and s.updated_at > 0 %}
-            {{ (s.updated_at * 1000) | datetimeformat if false else s.updated_at }}
-          {% else %}
-            —
-          {% endif %}
+          <div class="stack">
+            <div>
+              <strong>Diesel:</strong>
+              <span class="diesel-updated-at">
+                {% if diesel_updated_at and diesel_updated_at > 0 %}
+                  {{ diesel_updated_at }}
+                {% else %}
+                  —
+                {% endif %}
+              </span>
+            </div>
+            <div>
+              <strong>Gasoline:</strong>
+              <span class="gasoline-updated-at">
+                {% if gasoline_updated_at and gasoline_updated_at > 0 %}
+                  {{ gasoline_updated_at }}
+                {% else %}
+                  —
+                {% endif %}
+              </span>
+            </div>
+          </div>
         </td>
 
-        <!-- DISCOUNT cell: input + Save button (POST to discounts endpoint) -->
         <td>
-          <form action="{{ '/admin/discounts/update?key=' ~ (request.args.get('key') or '') }}" method="POST" class="row">
-            <input type="hidden" name="station" value="{{ s.name }}">
-            <input class="discount-input" type="number" step="0.01" min="0" name="discount_per_liter"
-                   placeholder="e.g. 2.50"
-                   value="{{ current_discount if current_discount is not none else '' }}" />
-            <button class="btn" type="submit">Save</button>
-          </form>
+          <div class="fuel-box">
+            <div class="fuel-row">
+              <span class="fuel-label diesel-label">Diesel</span>
+              <input class="discount-input diesel-discount-input" type="number" step="0.01" min="0"
+                     placeholder="e.g. 2.50"
+                     value="{{ diesel_discount if diesel_discount is not none else '' }}" />
+            </div>
+
+            <div class="fuel-row">
+              <span class="fuel-label gasoline-label">Gasoline</span>
+              <input class="discount-input gasoline-discount-input" type="number" step="0.01" min="0"
+                     placeholder="e.g. 1.00"
+                     value="{{ gasoline_discount if gasoline_discount is not none else '' }}" />
+            </div>
+          </div>
+        </td>
+
+        <td class="save-cell">
+          <button class="btn save-station-btn" type="button">Save Station</button>
         </td>
       </tr>
       {% endfor %}
@@ -115,7 +183,6 @@
     Tip: Bookmark this page with your <span class="mono">?key=</span> query string for quick access.
   </p>
 
-  <!-- Flash payload (for toast bridge) -->
   <script id="flash-data" type="application/json">
     {{ get_flashed_messages(with_categories=true) | tojson }}
   </script>
@@ -123,7 +190,6 @@
   <div id="toast"></div>
 
   <script>
-    // Simple toast
     function toast(msg, ok=true) {
       const el = document.getElementById('toast');
       el.textContent = msg;
@@ -132,7 +198,6 @@
       setTimeout(() => el.style.opacity = 0, 1800);
     }
 
-    // Show any Flask flashes as toasts
     (function showFlashes() {
       try {
         const payload = document.getElementById('flash-data')?.textContent || '[]';
@@ -143,14 +208,11 @@
             toast(message, ok);
           });
         }
-      } catch (e) {
-        // ignore
-      }
+      } catch (e) {}
     })();
 
     const ADMIN_KEY = new URLSearchParams(location.search).get('key') || '';
 
-    // stale marking helpers (existing)
     const STALE_DAYS = 7;
     const NOW_SECS = () => Date.now() / 1000;
 
@@ -163,22 +225,25 @@
     }
 
     function markRowStaleIfNeeded(row) {
-      const cell = row.querySelector('.updated-at');
-      if (!cell) return;
-      const raw = (cell.textContent || '').trim();
-      const epoch = Number(raw);
-      clearStale(row, cell);
+      const dieselCell = row.querySelector('.diesel-updated-at');
+      const gasolineCell = row.querySelector('.gasoline-updated-at');
 
-      // Never updated (—) or invalid -> stale
-      if (!Number.isFinite(epoch) || epoch <= 0) {
-        addStale(cell, row, 'Never updated');
-        return;
-      }
+      [dieselCell, gasolineCell].forEach(cell => {
+        if (!cell) return;
+        const raw = (cell.textContent || '').trim();
+        const epoch = Number(raw);
+        clearStale(null, cell);
 
-      const ageDays = (NOW_SECS() - epoch) / 86400;
-      if (ageDays >= STALE_DAYS) {
-        addStale(cell, row, `${Math.floor(ageDays)}d old`);
-      }
+        if (!Number.isFinite(epoch) || epoch <= 0) {
+          addStale(cell, row, 'Never updated');
+          return;
+        }
+
+        const ageDays = (NOW_SECS() - epoch) / 86400;
+        if (ageDays >= STALE_DAYS) {
+          addStale(cell, row, `${Math.floor(ageDays)}d old`);
+        }
+      });
     }
 
     function addStale(cell, row, titleText) {
@@ -190,34 +255,108 @@
       cell.appendChild(badge);
     }
 
-    // Initial pass on load
+    async function postJson(url, payload) {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        throw new Error(data.error || 'Failed');
+      }
+      return data;
+    }
+
+    async function postForm(url, payload) {
+      const body = new URLSearchParams(payload);
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        body: body.toString()
+      });
+
+      if (!res.ok) {
+        throw new Error('Failed');
+      }
+
+      return true;
+    }
+
     document.querySelectorAll('tbody tr').forEach(markRowStaleIfNeeded);
 
-    // PRICE Save handler (unchanged logic; button moved next to input)
-    document.querySelectorAll('.save-btn').forEach(btn => {
-      btn.addEventListener('click', async (e) => {
-        const row = e.target.closest('tr');
+    document.querySelectorAll('.save-station-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const row = btn.closest('tr');
         const stationId = row.getAttribute('data-station-id');
-        const price = parseFloat(row.querySelector('.price-input').value);
-        const updatedCell = row.querySelector('.updated-at');
+        const stationName = row.getAttribute('data-station-name');
+
+        const dieselPrice = parseFloat(row.querySelector('.diesel-price-input').value);
+        const gasolinePrice = parseFloat(row.querySelector('.gasoline-price-input').value);
+        const dieselDiscount = parseFloat(row.querySelector('.diesel-discount-input').value);
+        const gasolineDiscount = parseFloat(row.querySelector('.gasoline-discount-input').value);
+
+        if (!Number.isFinite(dieselPrice) || dieselPrice <= 0) {
+          toast('Diesel price is required.', false);
+          return;
+        }
+
+        if (!Number.isFinite(gasolinePrice) || gasolinePrice <= 0) {
+          toast('Gasoline price is required.', false);
+          return;
+        }
+
+        if (!Number.isFinite(dieselDiscount) || dieselDiscount < 0) {
+          toast('Diesel discount is required. Use 0 if no discount.', false);
+          return;
+        }
+
+        if (!Number.isFinite(gasolineDiscount) || gasolineDiscount < 0) {
+          toast('Gasoline discount is required. Use 0 if no discount.', false);
+          return;
+        }
 
         btn.disabled = true;
+
         try {
-          const res = await fetch('/admin/prices/update?key=' + encodeURIComponent(ADMIN_KEY), {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ station_id: stationId, price })
+          const dieselResult = await postJson('/admin/prices/update?key=' + encodeURIComponent(ADMIN_KEY), {
+            station_id: stationId,
+            fuel_type: 'diesel',
+            price: dieselPrice
           });
-          const data = await res.json();
-          if (!res.ok || !data.ok) throw new Error(data.error || 'Failed');
 
-          // Update epoch seconds in the cell
-          updatedCell.textContent = data.updated_at;
+          const gasolineResult = await postJson('/admin/prices/update?key=' + encodeURIComponent(ADMIN_KEY), {
+            station_id: stationId,
+            fuel_type: 'gasoline',
+            price: gasolinePrice
+          });
 
-          // Re-evaluate stale state for this row
+          await postForm('/admin/discounts/update?key=' + encodeURIComponent(ADMIN_KEY), {
+            station: stationName,
+            fuel_type: 'diesel',
+            discount_per_liter: dieselDiscount
+          });
+
+          await postForm('/admin/discounts/update?key=' + encodeURIComponent(ADMIN_KEY), {
+            station: stationName,
+            fuel_type: 'gasoline',
+            discount_per_liter: gasolineDiscount
+          });
+
+          const dieselUpdatedCell = row.querySelector('.diesel-updated-at');
+          const gasolineUpdatedCell = row.querySelector('.gasoline-updated-at');
+
+          if (dieselUpdatedCell && dieselResult.updated_at) {
+            dieselUpdatedCell.textContent = dieselResult.updated_at;
+          }
+
+          if (gasolineUpdatedCell && gasolineResult.updated_at) {
+            gasolineUpdatedCell.textContent = gasolineResult.updated_at;
+          }
+
           markRowStaleIfNeeded(row);
+          toast('Saved station ✔');
 
-          toast('Saved ✔');
         } catch (err) {
           console.error(err);
           toast('Save failed: ' + err.message, false);
