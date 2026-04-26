@@ -92,7 +92,7 @@
       background: white;
       border: 1px solid #cfe0f5;
       border-radius: 8px;
-      overflow: hidden;
+      overflow-x: auto;
     }
 
     .discount-table-header {
@@ -106,31 +106,32 @@
     .discount-table {
       width: 100%;
       border-collapse: collapse;
-      font-size: 0.94rem;
+      font-size: 0.82rem;
     }
 
     .discount-table th,
     .discount-table td {
-      padding: 0.85rem 0.8rem;
+      padding: 0.5rem 0.4rem;
       border-bottom: 1px solid #eef3f8;
+      text-align: center;
+      vertical-align: middle;
+    }
+
+    .discount-table th:first-child,
+    .discount-table td:first-child {
       text-align: left;
-      vertical-align: top;
     }
 
     .discount-table th {
       background: #ffffff;
       color: #0054a6;
       font-weight: 700;
-      font-size: 0.9rem;
-    }
-
-    .discount-table tr:last-child td {
-      border-bottom: none;
+      font-size: 0.78rem;
     }
 
     .discount-value {
       font-weight: 700;
-      color: #ff5c00;
+      color: #d93025; /* updated to red */
     }
 
     .price-value {
@@ -206,18 +207,44 @@
             <thead>
               <tr>
                 <th>Station</th>
-                <th>Price</th>
-                <th>Discount</th>
+                <th>Diesel Price</th>
+                <th>Diesel Discount</th>
+                <th>Gasoline Price</th>
+                <th>Gasoline Discount</th>
               </tr>
             </thead>
             <tbody>
               {% for row in station_table %}
               <tr>
                 <td>{{ row.name }}</td>
-                <td class="price-value">₱{{ row.price_php_per_liter }}</td>
+
+                <td class="price-value">
+                  {% if row.diesel_price not in [None, '', 'nan'] %}
+                    ₱{{ row.diesel_price }}/L
+                  {% else %}
+                    —
+                  {% endif %}
+                </td>
+
                 <td class="discount-value">
-                  {% if row.discount_per_liter not in [None, '', 'nan'] %}
-                    ₱{{ row.discount_per_liter }}/L
+                  {% if row.diesel_discount not in [None, '', 'nan'] %}
+                    -₱{{ row.diesel_discount }}/L
+                  {% else %}
+                    —
+                  {% endif %}
+                </td>
+
+                <td class="price-value">
+                  {% if row.gasoline_price not in [None, '', 'nan'] %}
+                    ₱{{ row.gasoline_price }}/L
+                  {% else %}
+                    —
+                  {% endif %}
+                </td>
+
+                <td class="discount-value">
+                  {% if row.gasoline_discount not in [None, '', 'nan'] %}
+                    -₱{{ row.gasoline_discount }}/L
                   {% else %}
                     —
                   {% endif %}

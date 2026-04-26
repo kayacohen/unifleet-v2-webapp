@@ -485,57 +485,61 @@ def book():
 
         station_names = [s.get("name", "") for s in station_objs]
 
-        # Build read-only station table with discounts
-        discounts = discount_store.get_all() or {}
-
-        import re as _re
-        def _norm_dashes(s: str) -> str:
-            s = str(s or '')
-            return s.replace('—', '-').replace('–', '-').strip().lower()
-
-        def _slug(s: str) -> str:
-            s = _norm_dashes(s)
-            s = _re.sub(r'[^a-z0-9\s-]', '', s)
-            s = _re.sub(r'[\s-]+', '_', s)
-            return s.strip('_')
-
         latest_updated_at = 0
 
         for s in station_objs:
             station_name = s.get("name", "")
-            station_updated_at = int(s.get("updated_at") or 0)
-            if station_updated_at > latest_updated_at:
-                latest_updated_at = station_updated_at
 
-            discount_value = None
+            fuel_prices = s.get("fuel_prices") or {}
 
-            # Match discount by exact name first
-            val = discounts.get(station_name)
+            diesel_info = fuel_prices.get("diesel") or {}
+            gasoline_info = fuel_prices.get("gasoline") or {}
 
-            # Fallback to normalized matching
-            if val is None:
-                target_norm = _norm_dashes(station_name)
-                target_slug = _slug(station_name)
-                for k, v in discounts.items():
-                    if _norm_dashes(k) == target_norm or _slug(k) == target_slug:
-                        val = v
-                        break
+            # Backward-compatible diesel fallback
+            diesel_raw_price = diesel_info.get("price_php_per_liter", s.get("price_php_per_liter"))
+            diesel_updated_at = int(diesel_info.get("updated_at") or s.get("updated_at") or 0)
 
-            if val is not None:
-                try:
-                    discount_value = f"{float(val):.2f}"
-                except Exception:
-                    discount_value = None
+            gasoline_raw_price = gasoline_info.get("price_php_per_liter")
+            gasoline_updated_at = int(gasoline_info.get("updated_at") or 0)
+
+            for ts in [diesel_updated_at, gasoline_updated_at]:
+                if ts > latest_updated_at:
+                    latest_updated_at = ts
 
             try:
-                price_value = f"{float(s.get('price_php_per_liter') or 0):.2f}"
+                diesel_price = f"{float(diesel_raw_price or 0):.2f}"
             except Exception:
-                price_value = "0.00"
+                diesel_price = "0.00"
+
+            try:
+                gasoline_price = f"{float(gasoline_raw_price or 0):.2f}" if gasoline_raw_price is not None else ""
+            except Exception:
+                gasoline_price = ""
+
+            try:
+                diesel_discount_raw = discount_store.get(station_name, "diesel")
+                diesel_discount = f"{float(diesel_discount_raw):.2f}" if diesel_discount_raw is not None else None
+            except Exception:
+                diesel_discount = None
+
+            try:
+                gasoline_discount_raw = discount_store.get(station_name, "gasoline")
+                gasoline_discount = f"{float(gasoline_discount_raw):.2f}" if gasoline_discount_raw is not None else None
+            except Exception:
+                gasoline_discount = None
 
             station_table.append({
                 "name": station_name,
-                "price_php_per_liter": price_value,
-                "discount_per_liter": discount_value,
+
+                # New fuel-specific display fields
+                "diesel_price": diesel_price,
+                "diesel_discount": diesel_discount,
+                "gasoline_price": gasoline_price,
+                "gasoline_discount": gasoline_discount,
+
+                # Keep old keys for current book.html compatibility until template is updated
+                "price_php_per_liter": diesel_price,
+                "discount_per_liter": diesel_discount,
             })
 
         if latest_updated_at > 0:
