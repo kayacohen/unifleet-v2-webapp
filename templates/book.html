@@ -189,8 +189,8 @@
 
       <label for="product_type">Fuel Type</label>
       <select name="product_type" id="product_type" class="full-width-input" required>
-        <option value="diesel" selected>Diesel</option>
-        <option value="gasoline">Gasoline</option>
+        <option value="Diesel" selected>Biodiesel</option>
+        <option value="Gasoline">Unleaded Gas</option>
       </select>
 
       <div style="background-color: #e6f0fb; padding: 1.5rem; border-radius: 8px; margin: 1.5rem 0;">
@@ -213,10 +213,10 @@
             <thead>
               <tr>
                 <th>Station</th>
-                <th>Diesel Price</th>
-                <th>Diesel Discount</th>
-                <th>Gasoline Price</th>
-                <th>Gasoline Discount</th>
+                <th>Biodiesel Price</th>
+                <th>Biodiesel Discount</th>
+                <th>Unleaded Gas Price</th>
+                <th>Unleaded Gas Discount</th>
               </tr>
             </thead>
             <tbody>
@@ -234,7 +234,7 @@
 
                 <td class="discount-value">
                   {% if row.diesel_discount not in [None, '', 'nan'] %}
-                    -₱{{ row.diesel_discount }}/L
+                    ₱{{ row.diesel_discount }}/L
                   {% else %}
                     —
                   {% endif %}
@@ -250,7 +250,7 @@
 
                 <td class="discount-value">
                   {% if row.gasoline_discount not in [None, '', 'nan'] %}
-                    -₱{{ row.gasoline_discount }}/L
+                    ₱{{ row.gasoline_discount }}/L
                   {% else %}
                     —
                   {% endif %}
@@ -265,7 +265,7 @@
         <iframe src="https://www.google.com/maps/d/u/1/embed?mid=1-kTfMqXppZshSnH0n4KyTjsBV9Af_9k&ehbc=2E312F&noprof=1" loading="lazy"></iframe>
       </div>
 
-      <label for="requested_amount_php">Prepaid Diesel/Gasoline Amount (in PHP) [Discount Applied Later]</label>
+      <label for="requested_amount_php">Prepaid Load Amount (in PHP)</label>
       <input type="number" name="requested_amount_php" class="full-width-input" required
       value="{{ form_values.requested_amount_php if form_values else '' }}">
 
@@ -325,16 +325,6 @@
 
         <label for="number_of_wheels">Number of Wheels on Vehicle</label>
         <input type="number" name="number_of_wheels" class="full-width-input">
-
-        <label for="fuel_type">Vehicle Fuel Type</label>
-        <input
-          type="text"
-          name="fuel_type"
-          value="Diesel"
-          class="full-width-input"
-          readonly
-          title="Vehicle fuel type is fixed to Diesel for this MVP"
-        />
 
         <label for="truck_make">Vehicle Make</label>
         <input type="text" name="truck_make" class="full-width-input">

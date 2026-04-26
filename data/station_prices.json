@@ -1,0 +1,64 @@
+{
+  "stations": [
+    {
+      "id": "ecooil_edsa_mandaluyong",
+      "brand": "EcoOil",
+      "name": "EcoOil - EDSA Mandaluyong",
+      "location": "EDSA Mandaluyong",
+      "price_php_per_liter": 54.0,
+      "updated_at": 1777194561,
+      "fuel_prices": {
+        "diesel": {
+          "label": "Diesel",
+          "price_php_per_liter": 54.0,
+          "updated_at": 1777194561
+        },
+        "gasoline": {
+          "label": "Gasoline",
+          "price_php_per_liter": 61.0,
+          "updated_at": 1777194562
+        }
+      }
+    },
+    {
+      "id": "ecooil_novaliches",
+      "brand": "EcoOil",
+      "name": "EcoOil - Barangka, Marikina",
+      "location": "Novaliches",
+      "price_php_per_liter": 57.0,
+      "updated_at": 1777214031,
+      "fuel_prices": {
+        "diesel": {
+          "label": "Diesel",
+          "price_php_per_liter": 57.0,
+          "updated_at": 1777214031
+        },
+        "gasoline": {
+          "label": "Gasoline",
+          "price_php_per_liter": 62.0,
+          "updated_at": 1777214031
+        }
+      }
+    },
+    {
+      "id": "ecooil_pasay",
+      "brand": "EcoOil",
+      "name": "EcoOil - EDSA Pasay",
+      "location": "Pasay",
+      "price_php_per_liter": 56.0,
+      "updated_at": 1777214034,
+      "fuel_prices": {
+        "diesel": {
+          "label": "Diesel",
+          "price_php_per_liter": 56.0,
+          "updated_at": 1777214034
+        },
+        "gasoline": {
+          "label": "Gasoline",
+          "price_php_per_liter": 61.0,
+          "updated_at": 1777214034
+        }
+      }
+    }
+  ]
+}
