@@ -94,6 +94,15 @@ def generate_qr_image(voucher_data, row_index):
     final_img.save(filepath)
     print(f"✅ Saved QR voucher: {filepath}")
 
+def _display_fuel_type(voucher_data):
+    fuel_type = voucher_data.get("fuel_type", "")
+    fuel_type = "" if fuel_type is None else str(fuel_type).strip()
+
+    if fuel_type == "" or fuel_type.lower() == "nan":
+        return "Diesel"
+
+    return fuel_type.title()
+
 
 def generate_branded_image(voucher_data):
     voucher_id = str(voucher_data['voucher_id']).strip()
@@ -116,9 +125,11 @@ def generate_branded_image(voucher_data):
         try:
             font_label = ImageFont.truetype("static/Roboto-Bold.ttf", 42)
             font_value = ImageFont.truetype("static/Roboto-Regular.ttf", 42)
+            font_fuel_label = ImageFont.truetype("static/Roboto-Bold.ttf", 54)
+            font_fuel_value = ImageFont.truetype("static/Roboto-Bold.ttf", 54)
         except:
             print("⚠️ Failed to load Roboto fonts. Using default.")
-            font_label = font_value = ImageFont.load_default()
+            font_label = font_value = font_fuel_label = font_fuel_value = ImageFont.load_default()
 
         qr_x = (base.width - qr.width) // 2
         qr_y = 525
@@ -127,6 +138,41 @@ def generate_branded_image(voucher_data):
         y = qr_y + qr.height + 70
         left_margin = 90
         spacing = 70
+
+        fuel_type = _display_fuel_type(voucher_data)
+
+        # Prominent fuel type warning block
+        fuel_box_x = left_margin
+        fuel_box_y = y - 18
+        fuel_box_w = base.width - (left_margin * 2)
+        fuel_box_h = 82
+
+        draw.rounded_rectangle(
+            [fuel_box_x, fuel_box_y, fuel_box_x + fuel_box_w, fuel_box_y + fuel_box_h],
+            radius=18,
+            fill=(255, 244, 204),
+            outline=(180, 120, 0),
+            width=3
+        )
+
+        fuel_label = "FUEL TYPE:"
+        fuel_value = fuel_type.upper()
+
+        draw.text((left_margin + 28, y), fuel_label, fill="black", font=font_fuel_label)
+
+        try:
+            fuel_label_width = draw.textlength(fuel_label, font=font_fuel_label)
+        except Exception:
+            fuel_label_width = draw.textbbox((0, 0), fuel_label, font=font_fuel_label)[2]
+
+        draw.text(
+            (left_margin + 28 + fuel_label_width + 24, y),
+            fuel_value,
+            fill=(180, 0, 0),
+            font=font_fuel_value
+        )
+
+        y += 105
 
         entries = [
             ("PHP Value:", f"₱{voucher_data.get('total_dispensed', '')} (Includes ₱{voucher_data.get('requested_amount_php', '')} Prepaid + ₱{voucher_data.get('discount_total', '')} FREE)"),
@@ -142,9 +188,9 @@ def generate_branded_image(voucher_data):
             try:
                 label_width = draw.textlength(label, font=font_label)
             except Exception:
-                # Fallback for older Pillow versions
                 label_width = draw.textbbox((0, 0), label, font=font_label)[2]
-            draw.text((left_margin + label_width + 20, y), value, fill="black", font=font_value)
+
+            draw.text((left_margin + label_width + 20, y), str(value), fill="black", font=font_value)
             y += spacing
 
         output_path = os.path.join(QR_OUTPUT_DIR, f"{voucher_id}_Official.png")
@@ -153,6 +199,7 @@ def generate_branded_image(voucher_data):
 
     except Exception as e:
         print(f"❌ Failed to generate branded image for {voucher_id}: {e}")
+
 
 
 def append_and_generate_vouchers(csv_path):
