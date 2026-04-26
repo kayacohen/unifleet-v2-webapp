@@ -49,17 +49,21 @@
             border-radius: 8px;
             overflow: hidden;
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            font-size: 0.88rem;
         }
 
         th, td {
-            padding: 12px 15px;
+            padding: 9px 10px;
             text-align: left;
             border-bottom: 1px solid #eee;
+            vertical-align: middle;
         }
 
         th {
             background-color: #004080;
             color: white;
+            font-size: 0.82rem;
+            white-space: nowrap;
         }
 
         tr:hover {
@@ -80,10 +84,10 @@
             background-color: #d9534f;
             color: white;
             border: none;
-            padding: 6px 10px;
+            padding: 6px 9px;
             border-radius: 4px;
             cursor: pointer;
-            font-size: 14px;
+            font-size: 12px;
         }
 
         .delete-button[disabled] {
@@ -95,14 +99,31 @@
             background-color: #28a745;
             color: white;
             border: none;
-            padding: 6px 10px;
+            padding: 6px 9px;
             border-radius: 4px;
             cursor: pointer;
-            font-size: 14px;
+            font-size: 12px;
             text-decoration: none;
+            white-space: nowrap;
         }
         .verify-button:hover {
             filter: brightness(0.95);
+        }
+
+        .fuel-badge {
+            display: inline-block;
+            padding: 3px 7px;
+            border-radius: 999px;
+            font-size: 0.78rem;
+            font-weight: 700;
+            background: #eef4fb;
+            color: #0054a6;
+            white-space: nowrap;
+        }
+
+        .fuel-badge.gasoline {
+            background: #fff7ed;
+            color: #b45309;
         }
 
         td form {
@@ -131,7 +152,6 @@
           color: #233b64;
           border-bottom: 1px solid #f0f3f8;
 
-          /* show a caret and align like a header */
           display: flex;
           align-items: center;
           justify-content: space-between;
@@ -145,7 +165,6 @@
 
         .panel > summary::-webkit-details-marker { display: none; }
 
-        /* Constrain panel inner width and center it */
         .panel .panel-controls,
         .panel .station-grid,
         .panel .panel-actions {
@@ -172,13 +191,12 @@
         .panel-controls .linklike:hover { text-decoration: underline; }
         .panel-controls .sep { color: #9aa7bd; }
 
-        /* >>> SINGLE compact station-grid rule (removed earlier duplicate) */
         .station-grid {
           display: grid;
           grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
           gap: 8px 12px;
           padding: 12px 18px 6px 18px;
-          max-height: 320px;      /* more compact */
+          max-height: 320px;
           overflow: auto;
         }
         .station-pill {
@@ -188,15 +206,15 @@
           background: #f7f9fc;
           border: 1px solid #e6edf6;
           border-radius: 999px;
-          padding: 6px 10px;      /* smaller pill */
+          padding: 6px 10px;
           cursor: pointer;
           user-select: none;
           transition: background .15s ease;
-          font-size: 0.9rem;      /* smaller text */
+          font-size: 0.9rem;
         }
         .station-pill:hover { background: #eef4fb; }
         .station-pill input[type="checkbox"] {
-          width: 14px; height: 14px; /* smaller checkbox */
+          width: 14px; height: 14px;
         }
 
         .station-pill-text {
@@ -245,23 +263,17 @@
         <a href="/book" target="_blank">Book</a>
         <a href="/export_supplier_csv" download>Download Supplier CSV</a>
         <a href="/admin/prices?key=unifleet-admin" target="_blank">Admin Prices</a>
-
-
     </div>
 
-    <!-- Supplier PDF filter + actions (persist via cookie) -->
-    <!-- NOTE: removed `open` so it's collapsed by default -->
     <details class="panel">
       <summary>Supplier PDF <span class="caret">▾</span></summary>
 
-      <!-- Compact controls row -->
       <div class="panel-controls">
         <button type="button" class="linklike" id="selectAllStations">Select all</button>
         <span class="sep">•</span>
         <button type="button" class="linklike" id="clearAllStations">Clear all</button>
       </div>
 
-      <!-- Station picker (posts cookie of selected station ids) -->
       <form action="/pdf/prefs" method="POST" id="pdfPrefsForm">
         {% set default_all = (selected_station_ids|length == 0) %}
 
@@ -286,7 +298,6 @@
           <button type="submit" class="btn-primary">Save Selection</button>
           <button type="button" class="btn-secondary" id="exportSupplierPdf">Download Supplier PDF</button>
         </div>
-
       </form>
     </details>
 
@@ -299,12 +310,13 @@
             <th>Voucher ID</th>
             <th>Driver</th>
             <th>Station</th>
+            <th>Fuel Type</th>
             <th>Refuel Date</th>
             <th>Status</th>
             <th>Verify</th>
             <th>Price (₱/L)</th>
             <th>Discount (₱/L)</th>
-            <th>Requested (₱)</th>
+            <th>Paid Amount (₱)</th>
             <th>Total</th>
             <th>PNG</th>
             <th>Delete PNGs</th>
@@ -317,6 +329,20 @@
                 <td><a href="/redeem/{{ row['voucher_id'] }}" target="_blank">{{ row['voucher_id'] }}</a></td>
                 <td>{{ row['driver_name'] }}</td>
                 <td>{{ row['station'] }}</td>
+
+                {% set _fuel_raw = row.get('fuel_type') %}
+                {% if _fuel_raw in (None, '', 'nan') or (_fuel_raw|string).lower() == 'nan' %}
+                  {% set _fuel_type = 'Diesel' %}
+                {% else %}
+                  {% set _fuel_type = _fuel_raw %}
+                {% endif %}
+
+                <td>
+                  <span class="fuel-badge {% if (_fuel_type|string).lower() == 'gasoline' %}gasoline{% endif %}">
+                    {{ _fuel_type }}
+                  </span>
+                </td>
+
                 <td>
                   {% set ts = row.get('refuel_datetime') or row.get('expected_refill_date') or row.get('transaction_date') %}
                   {{ ts|manila_time }}
@@ -338,7 +364,7 @@
                 {% set _price = row.get('price_snapshot_php_per_liter') or row.get('live_price_php_per_liter') %}
                 <td style="white-space:nowrap;">
                   {% if _price not in (None, '', 'nan') %}
-                    ₱{{ '%.2f'|format(_price) }}/L
+                    ₱{{ '%.2f'|format(_price|float) }}/L
                   {% else %}
                     —
                   {% endif %}
@@ -347,7 +373,7 @@
                 {% set _disc = row.get('discount_snapshot_php_per_liter') or row.get('discount_per_liter') %}
                 <td style="white-space:nowrap;">
                   {% if _disc not in (None, '', 'nan') %}
-                    ₱{{ '%.2f'|format(_disc) }}/L
+                    ₱{{ '%.2f'|format(_disc|float) }}/L
                   {% else %}
                     —
                   {% endif %}
@@ -399,7 +425,6 @@
             });
         }
 
-        // Supplier PDF: select/clear helpers
         (function () {
           const form = document.getElementById("pdfPrefsForm");
           if (!form) return;
@@ -435,7 +460,6 @@
       });
     })();
   </script>
-
 
 </body>
 </html>
