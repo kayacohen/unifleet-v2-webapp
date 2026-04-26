@@ -211,6 +211,20 @@ def _check_admin_key(req):
     key = req.args.get("key") or req.headers.get("X-Admin-Key")
     return key == ADMIN_KEY
 
+
+def _display_fuel_type(row):
+    """
+    Backward-compatible fuel type display.
+    Defaults to Diesel for old rows where fuel_type is blank, missing, or nan.
+    """
+    fuel_type = row.get("fuel_type", "")
+    fuel_type = "" if fuel_type is None else str(fuel_type).strip()
+
+    if fuel_type == "" or fuel_type.lower() == "nan":
+        return "Diesel"
+
+    return fuel_type.title()
+
 # =========================
 # Home / Dashboard
 # =========================
@@ -866,7 +880,7 @@ def supplier_api(voucher_id):
 
         return {
             "customer": "UniFleet",
-            "fuelProduct": "Diesel",
+            "fuelProduct": _display_fuel_type(r),
             "invoice": r.get("voucher_id", ""),
             "station": r.get("station", ""),
             "pricePhpPerLiter": float(price) if price not in (None, "", "nan") else None,
@@ -942,7 +956,7 @@ def export_supplier_csv():
 
             out_rows.append({
                 "Customer": "UniFleet",
-                "Fuel Product": "Diesel",
+                "Fuel Product": _display_fuel_type(r),
                 "Invoice": vid,
                 "Station": stat,
                 "Price (₱/L)": _fmt_money(price),

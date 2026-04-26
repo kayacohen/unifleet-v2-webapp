@@ -29,6 +29,15 @@ def _to_float(v, default=0.0):
     except Exception:
         return float(default)
 
+def _display_fuel_type(row):
+    fuel_type = row.get("fuel_type", "")
+    fuel_type = "" if fuel_type is None else str(fuel_type).strip()
+
+    if fuel_type == "" or fuel_type.lower() == "nan":
+        return "Diesel"
+
+    return fuel_type.title()
+
 def _fmt_money(v):
     try:
         return f"{float(v):,.2f}"
@@ -102,13 +111,16 @@ def build_supplier_pdf(*, vouchers, target_station_ids, stations, logo_path=None
         plate = r.get("vehicle_plate") or ""
         vid = r.get("voucher_id") or ""
 
+        fuel_type = _display_fuel_type(r)
+
         rows.append([
             station_name,
+            fuel_type,
             f"{_fmt_money(amount)}",
             driver,
             plate,
             vid,
-            ""  # Name / Signature
+            ""  # Type Name & E-Signature
         ])
 
     # Canvas
@@ -132,7 +144,7 @@ def build_supplier_pdf(*, vouchers, target_station_ids, stations, logo_path=None
     faq_a = ParagraphStyle("FAQA", parent=styles["BodyText"], leading=14, spaceAfter=8)
 
     # Title/subtitle (left)
-    y = _draw_paragraph(c, "UniFleet – Diesel Refuel Vouchers (Offline Version)", title_style, x_margin, y, page_w - 2*x_margin)
+    y = _draw_paragraph(c, "UniFleet – Fuel Refuel Vouchers (Daily PDF)", title_style, x_margin, y, page_w - 2*x_margin)
     ts_mnl = datetime.now(ZoneInfo("Asia/Manila")).strftime("%Y-%m-%d %H:%M")
     y = _draw_paragraph(c, f"Generated: {ts_mnl}", subtitle_style, x_margin, y, page_w - 2*x_margin)
     y -= 6 * mm
@@ -150,44 +162,167 @@ def build_supplier_pdf(*, vouchers, target_station_ids, stations, logo_path=None
             pass
 
     # Table (adjusted widths & row height via padding)
-    header = ["Station (Expected)", "Amount (PHP)", "Driver name", "Plate", "Voucher ID (Unredeemed)", "Name / Signature"]
-    data = [header]
-    data.extend(rows if rows else [["—"] * len(header)])
+    header = [
+        "Station",
+        "Fuel",
+        "Amount (PHP)",
+        "Driver Name",
+        "Plate",
+        "Voucher ID",
+        "Type Name & E-Signature<br/><font size=8>Complete & Send Screenshot to Viber</font>"
+    ]
+    cell_style = ParagraphStyle(
+        "SupplierCell",
+        parent=styles["BodyText"],
+        fontName="Helvetica",
+        fontSize=9,
+        leading=11,
+    )
+
+    header_style = ParagraphStyle(
+        "SupplierHeader",
+        parent=styles["BodyText"],
+        fontName="Helvetica-Bold",
+        fontSize=9,
+        leading=11,
+        textColor=colors.white,
+    )
+
+    data = [[Paragraph(str(h), header_style) for h in header]]
+
+    if rows:
+        for row in rows:
+            data.append([Paragraph(str(cell or ""), cell_style) for cell in row])
+    else:
+        data.append([Paragraph("—", cell_style) for _ in header])
 
     # Column widths (fit within A4 landscape minus margins)
     # Totals to ~272mm with 12mm side margins (page width 297mm).
     col_widths = [
-        74*mm,  # Station (slightly reduced)
-        24*mm,  # Voucher (narrower)
-        48*mm,  # Driver
-        24*mm,  # Plate (slightly narrower)
-        44*mm,  # Voucher ID (narrower)
-        58*mm,  # Name/Signature (wider)
+        48*mm,  # Station - tighter
+        22*mm,  # Fuel
+        24*mm,  # Amount
+        34*mm,  # Driver - shorter, wraps
+        22*mm,  # Plate
+        38*mm,  # Voucher ID
+        84*mm,  # Type Name & E-Signature - wider
     ]
     table = Table(data, colWidths=col_widths)
 
     table.setStyle(TableStyle([
-        ("FONT", (0,0), (-1,0), "Helvetica-Bold", 10),
+        ("FONT", (0,0), (-1,0), "Helvetica-Bold", 9),
         ("TEXTCOLOR", (0,0), (-1,0), colors.white),
         ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#233b64")),
-        ("ALIGN", (1,1), (1,-1), "RIGHT"),  # Voucher amount right-aligned
+
+        # Deep red ONLY for last header cell
+        ("BACKGROUND", (-1,0), (-1,0), colors.HexColor("#8B0000")),
+        ("TEXTCOLOR", (-1,0), (-1,0), colors.white),
+
+        ("ALIGN", (2,1), (2,-1), "RIGHT"),
         ("FONTSIZE", (0,0), (-1,-1), 9),
         ("GRID", (0,0), (-1,-1), 0.25, colors.HexColor("#d8e2f0")),
-        ("ROWBACKGROUNDS", (0,1), (-1,-1), [colors.whitesmoke, colors.HexColor("#f7f9fc")]),
+        ("ROWBACKGROUNDS", (0,1), (-2,-1), [colors.whitesmoke, colors.HexColor("#f7f9fc")]),
+        # Light red signature cells, header remains deep red
+        ("BACKGROUND", (-1,1), (-1,-1), colors.HexColor("#FDECEC")),
         ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
+
         ("LEFTPADDING", (0,0), (-1,-1), 6),
         ("RIGHTPADDING", (0,0), (-1,-1), 6),
-        # Increase row height roughly ~30% by padding
-        ("TOPPADDING", (0,1), (-1,-1), 10),
-        ("BOTTOMPADDING", (0,1), (-1,-1), 10),
-        # Keep header slightly tighter
-        ("TOPPADDING", (0,0), (-1,0), 6),
-        ("BOTTOMPADDING", (0,0), (-1,0), 6),
+
+        # Taller voucher rows — designed for about 6 vouchers per page
+        ("TOPPADDING", (0,1), (-1,-1), 22),
+        ("BOTTOMPADDING", (0,1), (-1,-1), 22),
+
+        # Header
+        ("TOPPADDING", (0,0), (-1,0), 7),
+        ("BOTTOMPADDING", (0,0), (-1,0), 7),
     ]))
 
-    tw, th = table.wrapOn(c, page_w - 2*x_margin, y - 10*mm)
-    table.drawOn(c, x_margin, y - th)
-    y = y - th - (8 * mm)
+    # Draw table in chunks so rows do not run off the page
+    MAX_ROWS_PER_PAGE = 6
+
+    voucher_rows = data[1:]  # exclude header
+    chunks = [
+        voucher_rows[i:i + MAX_ROWS_PER_PAGE]
+        for i in range(0, len(voucher_rows), MAX_ROWS_PER_PAGE)
+    ]
+
+    if not chunks:
+        chunks = [[Paragraph("—", cell_style) for _ in header]]
+
+    for idx, chunk in enumerate(chunks):
+        if idx > 0:
+            c.showPage()
+            y = page_h - y_margin
+
+            # Redraw title/subtitle on each new page
+            y = _draw_paragraph(
+                c,
+                "UniFleet – Fuel Refuel Vouchers (Daily PDF)",
+                title_style,
+                x_margin,
+                y,
+                page_w - 2*x_margin
+            )
+            ts_mnl = datetime.now(ZoneInfo("Asia/Manila")).strftime("%Y-%m-%d %H:%M")
+            y = _draw_paragraph(
+                c,
+                f"Generated: {ts_mnl}",
+                subtitle_style,
+                x_margin,
+                y,
+                page_w - 2*x_margin
+            )
+            y -= 6 * mm
+
+            # Redraw logo on each new page
+            if logo_path and os.path.isfile(logo_path):
+                try:
+                    img = Image(logo_path)
+                    img._restrictSize(42*mm, 18*mm)
+                    img_w, img_h = img.drawWidth, img.drawHeight
+                    img_x = page_w - x_margin - img_w
+                    img_y = page_h - y_margin - img_h
+                    img.drawOn(c, img_x, img_y)
+                except Exception:
+                    pass
+
+        page_data = [data[0]] + chunk
+        page_table = Table(page_data, colWidths=col_widths)
+
+        page_table.setStyle(TableStyle([
+            ("FONT", (0,0), (-1,0), "Helvetica-Bold", 9),
+            ("TEXTCOLOR", (0,0), (-1,0), colors.white),
+            ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#233b64")),
+
+            # Deep red ONLY for last header cell
+            ("BACKGROUND", (-1,0), (-1,0), colors.HexColor("#8B0000")),
+            ("TEXTCOLOR", (-1,0), (-1,0), colors.white),
+
+            ("ALIGN", (2,1), (2,-1), "RIGHT"),
+            ("FONTSIZE", (0,0), (-1,-1), 9),
+            ("GRID", (0,0), (-1,-1), 0.25, colors.HexColor("#d8e2f0")),
+            ("ROWBACKGROUNDS", (0,1), (-2,-1), [colors.whitesmoke, colors.HexColor("#f7f9fc")]),
+
+            # Light red signature cells
+            ("BACKGROUND", (-1,1), (-1,-1), colors.HexColor("#FDECEC")),
+
+            ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
+            ("LEFTPADDING", (0,0), (-1,-1), 6),
+            ("RIGHTPADDING", (0,0), (-1,-1), 6),
+
+            # Taller voucher rows — designed for about 6 vouchers per page
+            ("TOPPADDING", (0,1), (-1,-1), 22),
+            ("BOTTOMPADDING", (0,1), (-1,-1), 22),
+
+            # Header
+            ("TOPPADDING", (0,0), (-1,0), 7),
+            ("BOTTOMPADDING", (0,0), (-1,0), 7),
+        ]))
+
+        tw, th = page_table.wrapOn(c, page_w - 2*x_margin, y - 10*mm)
+        page_table.drawOn(c, x_margin, y - th)
+        y = y - th - (8 * mm)
 
     # FAQ section
     def ensure_space(h_needed):
