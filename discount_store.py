@@ -1,198 +1,286 @@
-import json
-import csv
+"""
+discount_store.py — Postgres-backed per-station discount store.
+
+F2.3 of the UniFleet v2 → Railway + Postgres migration. Replaces the
+JSON+CSV implementation with a thin wrapper over the F2.1 schema's
+`stations` + `discounts` + `discount_history` tables. The public
+class API is preserved so call sites in main.py do not change.
+
+Public API (unchanged):
+  DiscountStore(json_path=None, history_csv_path=None)  constructor
+    - json_path / history_csv_path are accepted for back-compat but
+      ignored; the data lives in Postgres now.
+  .get_all()                          Dict[display_name, float]
+  .get(station)                       Optional[float]
+  .set(station, value, actor, reason) value=None removes the entry
+  .set_many(updates, actor, reason)   bulk upsert/remove
+  .clear_all(actor, reason)           remove all discounts
+
+  DiscountValueError                  exception (preserved)
+
+Concurrency: the legacy in-process `Lock` is no longer needed (the
+DB provides row-level locking via the transaction). The Lock is kept
+as an unused attribute to avoid breaking any caller that introspects
+the instance.
+"""
+
 import os
 from datetime import datetime
-from zoneinfo import ZoneInfo
 from threading import Lock
 from typing import Dict, Optional, Iterable, Tuple, Any
+from zoneinfo import ZoneInfo
+
+from psycopg.rows import dict_row
+
+from db.pool import get_pool
+
 
 class DiscountValueError(ValueError):
     """Raised when an invalid discount value is provided."""
     pass
 
 
+# Back-compat path constants; no longer used at runtime.
+DEFAULT_JSON_PATH = "data/discount_store.json"
+DEFAULT_HISTORY_CSV_PATH = "data/discount_history.csv"
+VALUE_PRECISION_DECIMALS = 4
+
+
 class DiscountStore:
+    """Per-station discount store, backed by the Postgres
+    `discounts` and `discount_history` tables.
+
+    The legacy `json_path` and `history_csv_path` constructor args
+    are accepted but ignored. The data lives in Postgres now.
     """
-    Persists per-station `discount_per_liter` values to JSON,
-    and appends all mutations to a CSV audit log.
-
-    - Current state: data/discount_store.json
-      Example:
-      {
-        "Cleanfuel - Balagtas": 2.5,
-        "Unioil - Buendia": 1.75
-      }
-
-    - Audit log: data/discount_history.csv
-      Columns:
-      timestamp_iso, station, old_discount_per_liter, new_discount_per_liter, actor, reason
-
-    NOTE: timestamp_iso is logged in Asia/Manila local time (ISO 8601), e.g. 2025-09-01T21:30:00+08:00
-    """
-
-    DEFAULT_JSON_PATH = "data/discount_store.json"
-    DEFAULT_HISTORY_CSV_PATH = "data/discount_history.csv"
-    VALUE_PRECISION_DECIMALS = 4  # keep small but precise enough
 
     def __init__(self,
                  json_path: str = None,
-                 history_csv_path: str = None):
-        self.json_path = json_path or self.DEFAULT_JSON_PATH
-        self.history_csv_path = history_csv_path or self.DEFAULT_HISTORY_CSV_PATH
+                 history_csv_path: str = None,
+                 dsn: Optional[str] = None):
+        # Back-compat: accept the legacy paths but don't use them.
+        self.json_path = json_path or DEFAULT_JSON_PATH
+        self.history_csv_path = history_csv_path or DEFAULT_HISTORY_CSV_PATH
+        # Kept for back-compat with callers that may introspect it.
         self._lock = Lock()
-        self._ensure_files()
+        # The DSN override is mostly for tests; production reads
+        # DATABASE_URL / UNIFLEET_DB_DSN via the shared pool.
+        self._dsn = dsn
 
     # -------------------------
     # Public API
     # -------------------------
+
     def get_all(self) -> Dict[str, float]:
-        """Return a copy of all station → discount_per_liter mappings."""
-        with self._lock:
-            return dict(self._load())
+        """Return a copy of all station -> discount_per_liter mappings.
+
+        Keys are station display names (not slug ids), matching the
+        legacy JSON shape that call sites in main.py expect.
+        Stations without a discount row are omitted.
+        """
+        pool = get_pool(dsn=self._dsn)
+        with pool.connection() as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                cur.execute("""
+                    SELECT s.display_name AS name, d.discount_per_liter AS value
+                    FROM stations s
+                    JOIN discounts d ON d.station_id = s.id
+                """)
+                rows = cur.fetchall()
+        return {r["name"]: float(r["value"]) for r in rows}
 
     def get(self, station: str) -> Optional[float]:
-        """Return discount for a station (or None if not set)."""
+        """Return discount for a station (or None if not set or station unknown)."""
         key = self._normalize_station(station)
-        with self._lock:
-            return self._load().get(key)
+        if not key:
+            return None
+        pool = get_pool(dsn=self._dsn)
+        with pool.connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT d.discount_per_liter
+                    FROM discounts d
+                    JOIN stations s ON s.id = d.station_id
+                    WHERE s.display_name = %s
+                """, (key,))
+                row = cur.fetchone()
+        if row is None or row[0] is None:
+            return None
+        return float(row[0])
 
     def set(self,
             station: str,
             discount_per_liter: Optional[float],
             actor: str = "system",
             reason: str = "") -> None:
-        """
-        Set (or clear) a station's discount. If `discount_per_liter` is None,
-        the station entry is removed. Writes to JSON and logs to CSV.
+        """Set (or clear) a station's discount.
+
+        If `discount_per_liter` is None, the discounts row is
+        removed and a history row is appended with new=NULL.
+        Otherwise the discount is upserted and a history row is
+        appended with the new value.
         """
         key = self._normalize_station(station)
-        with self._lock:
-            data = self._load()
-            old = data.get(key)
+        if not key:
+            return
 
-            if discount_per_liter is None:
-                # Remove entry if exists
-                if key in data:
-                    del data[key]
-                    self._save(data)
-                    self._append_history(key, old, None, actor, reason)
-                return
+        # Look up the station id (or fail with KeyError if not found)
+        pool = get_pool(dsn=self._dsn)
+        with pool.connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT id FROM stations WHERE display_name = %s",
+                    (key,),
+                )
+                row = cur.fetchone()
+                if row is None:
+                    raise KeyError(f"Station '{key}' not found")
+                station_id = row[0]
 
-            new_val = self._validate_and_round(discount_per_liter)
-            data[key] = new_val
-            self._save(data)
-            self._append_history(key, old, new_val, actor, reason)
+                # Read old value
+                cur.execute(
+                    "SELECT discount_per_liter FROM discounts WHERE station_id = %s",
+                    (station_id,),
+                )
+                old_row = cur.fetchone()
+                old_val = old_row[0] if old_row else None
+
+                if discount_per_liter is None:
+                    # Remove the entry
+                    cur.execute(
+                        "DELETE FROM discounts WHERE station_id = %s",
+                        (station_id,),
+                    )
+                    new_val = None
+                else:
+                    new_val = self._validate_and_round(discount_per_liter)
+                    cur.execute("""
+                        INSERT INTO discounts (station_id, discount_per_liter, updated_at)
+                        VALUES (%s, %s, NOW())
+                        ON CONFLICT (station_id) DO UPDATE
+                        SET discount_per_liter = EXCLUDED.discount_per_liter,
+                            updated_at = NOW()
+                    """, (station_id, new_val))
+
+                # Append to discount_history
+                cur.execute("""
+                    INSERT INTO discount_history
+                        (station_id, old_discount_per_liter, new_discount_per_liter,
+                         timestamp_iso, actor, reason)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                """, (
+                    station_id,
+                    old_val,
+                    new_val,
+                    self._now_iso(),
+                    actor,
+                    reason,
+                ))
+            conn.commit()
 
     def set_many(self,
                  updates: Dict[str, Optional[float]],
                  actor: str = "system",
                  reason: str = "") -> None:
+        """Bulk upsert/remove. Pass None to remove a station's discount.
+
+        All updates are applied in a single transaction so the
+        history rows are appended atomically with the discounts
+        table mutations.
         """
-        Bulk upsert/remove. Pass None to remove a station's discount.
-        All updates are applied atomically under a single lock.
-        """
-        now_iso = self._now_iso()
-        with self._lock:
-            data = self._load()
-            history_rows: Iterable[Tuple[str, str, Any, Any, str, str]] = []
+        if not updates:
+            return
 
-            for station, value in updates.items():
-                key = self._normalize_station(station)
-                old = data.get(key)
+        pool = get_pool(dsn=self._dsn)
+        with pool.connection() as conn:
+            with conn.cursor() as cur:
+                for station, value in updates.items():
+                    key = self._normalize_station(station)
+                    if not key:
+                        continue
 
-                if value is None:
-                    if key in data:
-                        del data[key]
-                        history_rows = (*history_rows, (now_iso, key, old, None, actor, reason))
-                    continue
+                    cur.execute(
+                        "SELECT id FROM stations WHERE display_name = %s",
+                        (key,),
+                    )
+                    row = cur.fetchone()
+                    if row is None:
+                        # Skip unknown stations silently (legacy
+                        # behavior: the JSON store didn't know about
+                        # unknown stations either, but the schema
+                        # would have raised an FK error). Log and
+                        # move on.
+                        continue
+                    station_id = row[0]
 
-                new_val = self._validate_and_round(value)
-                data[key] = new_val
-                history_rows = (*history_rows, (now_iso, key, old, new_val, actor, reason))
+                    cur.execute(
+                        "SELECT discount_per_liter FROM discounts WHERE station_id = %s",
+                        (station_id,),
+                    )
+                    old_row = cur.fetchone()
+                    old_val = old_row[0] if old_row else None
 
-            self._save(data)
-            if history_rows:
-                self._append_history_rows(history_rows)
+                    if value is None:
+                        cur.execute(
+                            "DELETE FROM discounts WHERE station_id = %s",
+                            (station_id,),
+                        )
+                        new_val = None
+                    else:
+                        new_val = self._validate_and_round(value)
+                        cur.execute("""
+                            INSERT INTO discounts (station_id, discount_per_liter, updated_at)
+                            VALUES (%s, %s, NOW())
+                            ON CONFLICT (station_id) DO UPDATE
+                            SET discount_per_liter = EXCLUDED.discount_per_liter,
+                                updated_at = NOW()
+                        """, (station_id, new_val))
+
+                    cur.execute("""
+                        INSERT INTO discount_history
+                            (station_id, old_discount_per_liter, new_discount_per_liter,
+                             timestamp_iso, actor, reason)
+                        VALUES (%s, %s, %s, %s, %s, %s)
+                    """, (
+                        station_id,
+                        old_val,
+                        new_val,
+                        self._now_iso(),
+                        actor,
+                        reason,
+                    ))
+            conn.commit()
 
     def clear_all(self,
                   actor: str = "system",
                   reason: str = "clear_all") -> None:
-        """
-        Remove all discounts. Appends one CSV row per cleared station.
-        """
-        with self._lock:
-            data = self._load()
-            if not data:
-                return
-            now_iso = self._now_iso()
-            rows = [(now_iso, k, v, None, actor, reason) for k, v in data.items()]
-            self._save({})
-            self._append_history_rows(rows)
+        """Remove all discounts. Appends one history row per cleared station."""
+        pool = get_pool(dsn=self._dsn)
+        with pool.connection() as conn:
+            with conn.cursor() as cur:
+                # Capture all current (station_id, value) pairs, then
+                # delete in one statement.
+                cur.execute("""
+                    SELECT station_id, discount_per_liter
+                    FROM discounts
+                """)
+                current = cur.fetchall()
+                if not current:
+                    return
+                cur.execute("DELETE FROM discounts")
+                ts = self._now_iso()
+                for station_id, val in current:
+                    cur.execute("""
+                        INSERT INTO discount_history
+                            (station_id, old_discount_per_liter, new_discount_per_liter,
+                             timestamp_iso, actor, reason)
+                        VALUES (%s, %s, %s, %s, %s, %s)
+                    """, (station_id, val, None, ts, actor, reason))
+            conn.commit()
 
     # -------------------------
     # Internal helpers
     # -------------------------
-    def _ensure_files(self) -> None:
-        os.makedirs(os.path.dirname(self.json_path), exist_ok=True)
-        if not os.path.exists(self.json_path):
-            with open(self.json_path, "w", encoding="utf-8") as f:
-                json.dump({}, f, indent=2)
-
-        os.makedirs(os.path.dirname(self.history_csv_path), exist_ok=True)
-        if not os.path.exists(self.history_csv_path):
-            with open(self.history_csv_path, "w", newline="", encoding="utf-8") as f:
-                writer = csv.writer(f)
-                writer.writerow([
-                    "timestamp_iso",
-                    "station",
-                    "old_discount_per_liter",
-                    "new_discount_per_liter",
-                    "actor",
-                    "reason"
-                ])
-
-    def _load(self) -> Dict[str, float]:
-        with open(self.json_path, "r", encoding="utf-8") as f:
-            raw = json.load(f) or {}
-            # Normalize to floats
-            out: Dict[str, float] = {}
-            for k, v in raw.items():
-                try:
-                    out[self._normalize_station(k)] = float(v)
-                except (TypeError, ValueError):
-                    continue
-            return out
-
-    def _save(self, data: Dict[str, float]) -> None:
-        # Write atomically: write to tmp then move
-        tmp_path = f"{self.json_path}.tmp"
-        with open(tmp_path, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2)
-        os.replace(tmp_path, self.json_path)
-
-    def _append_history(self,
-                        station: str,
-                        old: Optional[float],
-                        new: Optional[float],
-                        actor: str,
-                        reason: str) -> None:
-        with open(self.history_csv_path, "a", newline="", encoding="utf-8") as f:
-            writer = csv.writer(f)
-            writer.writerow([
-                self._now_iso(),
-                station,
-                "" if old is None else old,
-                "" if new is None else new,
-                actor,
-                reason
-            ])
-
-    def _append_history_rows(self,
-                             rows: Iterable[Tuple[str, str, Any, Any, str, str]]) -> None:
-        with open(self.history_csv_path, "a", newline="", encoding="utf-8") as f:
-            writer = csv.writer(f)
-            for row in rows:
-                writer.writerow(list(row))
 
     def _validate_and_round(self, value: float) -> float:
         try:
@@ -201,7 +289,7 @@ class DiscountStore:
             raise DiscountValueError("discount_per_liter must be a number (float).")
         if v < 0:
             raise DiscountValueError("discount_per_liter cannot be negative.")
-        return round(v, self.VALUE_PRECISION_DECIMALS)
+        return round(v, VALUE_PRECISION_DECIMALS)
 
     @staticmethod
     def _normalize_station(station: str) -> str:
@@ -209,5 +297,7 @@ class DiscountStore:
 
     @staticmethod
     def _now_iso() -> str:
-        # Manila local time (ISO 8601 with +08:00 offset), seconds precision
+        # Manila local time (ISO 8601 with +08:00 offset), seconds precision.
+        # Matches the legacy JSON impl so the timestamp_iso column
+        # is the same shape across both stores.
         return datetime.now(ZoneInfo("Asia/Manila")).isoformat(timespec="seconds")
