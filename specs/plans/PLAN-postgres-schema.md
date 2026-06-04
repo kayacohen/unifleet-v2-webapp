@@ -488,7 +488,7 @@ A small Python script that connects to a Postgres database (via `$DATABASE_URL` 
 
 ## Task T2: `db/schema.sql` — the 9-table schema
 
-> **Status:** not started
+> **Status:** done
 > **Effort:** m
 > **Priority:** critical
 > **Depends on:** T1
