@@ -71,3 +71,23 @@ def schema_db(postgres_db):
     )
     yield postgres_db
 
+
+@pytest.fixture(scope="session")
+def seeded_db(schema_db):
+    """Apply the seeds on top of the schema; yield the same DSN."""
+    db_dir = Path(__file__).resolve().parent.parent / "db"
+    seed_files = [db_dir / "seed_stations.sql", db_dir / "seed_prices.sql"]
+    result = subprocess.run(
+        [sys.executable, "db/apply.py", *[str(p) for p in seed_files],
+         "--dsn", schema_db],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0, (
+        f"db/apply.py failed for seed files\n"
+        f"stdout: {result.stdout!r}\n"
+        f"stderr: {result.stderr!r}"
+    )
+    yield schema_db
+

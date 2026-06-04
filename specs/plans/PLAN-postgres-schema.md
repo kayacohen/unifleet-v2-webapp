@@ -599,7 +599,7 @@ Write `db/schema.sql` defining all 9 tables: `vouchers` (wide, 28+ columns), `st
 
 ## Task T3: `db/seed_*.sql` — station and price seed data
 
-> **Status:** not started
+> **Status:** done
 > **Effort:** s
 > **Priority:** high
 > **Depends on:** T1, T2

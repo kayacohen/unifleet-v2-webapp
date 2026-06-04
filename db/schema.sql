@@ -26,14 +26,14 @@
 -- voucher data.
 -- ============================================================
 CREATE TABLE IF NOT EXISTS stations (
-    id          VARCHAR(64)  PRIMARY KEY,
-    legacy_id   VARCHAR(64)  UNIQUE,
-    brand       VARCHAR(100) NOT NULL,
-    name        VARCHAR(200) NOT NULL,
-    location    VARCHAR(200),
-    is_active   BOOLEAN      NOT NULL DEFAULT TRUE,
-    created_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-    updated_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+    id            VARCHAR(64)  PRIMARY KEY,
+    legacy_id     VARCHAR(64)  UNIQUE,
+    brand         VARCHAR(100) NOT NULL,
+    display_name  VARCHAR(200) NOT NULL,
+    location      VARCHAR(200),
+    is_active     BOOLEAN      NOT NULL DEFAULT TRUE,
+    created_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    updated_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
 
 -- ============================================================
