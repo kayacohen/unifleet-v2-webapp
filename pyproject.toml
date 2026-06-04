@@ -15,6 +15,7 @@ imgkit = "^1.2.3"
 pytz = "^2025.2"
 reportlab = "^4.2.2"
 psycopg = {version = "^3.1", extras = ["binary"]}
+psycopg-pool = "^3.2"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.0"
