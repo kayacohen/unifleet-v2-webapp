@@ -406,7 +406,7 @@ Add the repo-side artifacts the Railway deploy needs: a `railway.toml` that decl
 
 ## Task T2: Railway provisioning + on-Railway verifications
 
-> **Status:** not started
+> **Status:** done (operational prep); on-Railway execution pending operator
 > **Effort:** s
 > **Priority:** critical
 > **Depends on:** T1
@@ -414,6 +414,42 @@ Add the repo-side artifacts the Railway deploy needs: a `railway.toml` that decl
 ### Description
 
 Provision the Railway resources (project `unifleet`, service `web`, Postgres `unifleet`, Volume `data` mounted at `/data`), connect the GitHub repo for auto-deploy, and execute the three on-Railway verifications called out in the plan: the sanity app responds, the build probe passes, and the Volume is actually persistent. This task is operational, not code-bearing; its "tests" are manual verifications documented in the task's commit message or a follow-up note.
+
+### Prep work completed (2026-06-04)
+
+The repo-side and tooling-side prep is done. The on-Railway execution requires a logged-in operator and is pending.
+
+**Repo state:**
+- T1 commit (`902c2dd feat(infra): F1.1 — Railway deploy scaffold`) is on `origin/main` and will be the first deploy when the GitHub integration is linked.
+- Working branch `dev` is one commit ahead of nothing (fast-forwarded to main).
+
+**New files for the operator:**
+- `scripts/provision_railway.sh` — idempotently creates the project, service, Postgres, and Volume. **Stops and asks on `unifleet` project-name collision** (per the user's T2 choice). Requires `railway login` to have been run first.
+- `scripts/run_f1_1_verifications.sh` — runs the 12 on-Railway verifications in order, captures output, halts on first failure, and appends results to `docs/f1.1-verification-log.md`.
+- `docs/f1.1-verification-log.md` — the durable record of all 12 checks. Pre-filled with the GIVEN/WHEN/THEN from this plan, expected output, command to run, and a blank actual-result section per check. Filled in by the operator as checks complete.
+
+**Local validation done:**
+- Full test suite: 15/15 passing (`poetry run pytest`).
+- `scripts/verify_build.py` SKIP path verified locally: `unset DATABASE_URL && poetry run python scripts/verify_build.py` → exit 0, `SKIP: db (DATABASE_URL not set)`, `RESULT: PASS`.
+- `scripts/verify_build.py` FAIL path verified locally: `DATABASE_URL=postgresql://nobody:wrong@127.0.0.1:1/none?connect_timeout=2 poetry run python scripts/verify_build.py` → exit 1, `FAIL: db (OperationalError: ... connection refused)`, `RESULT: FAIL`.
+- Gunicorn smoke: `poetry run gunicorn --bind 127.0.0.1:5050 sanity_app:app` → GET `/` returns 200 with body `ok`, HEAD `/` returns 200.
+- Bash syntax check: both new scripts pass `bash -n`.
+
+**Operator action (in order):**
+1. `railway login` (one-time, opens a browser).
+2. In the Railway dashboard, grant the GitHub integration admin access to `kayacohen/unifleet-v2-webapp` (one-time, browser step).
+3. `bash scripts/provision_railway.sh` — provisions all four resources; halts on collision per the user's choice.
+4. Open the dashboard, verify the Postgres region is `asia-southeast` and the Volume is attached to `web` at `/data` (the CLI cannot confirm these).
+5. Link the GitHub repo in the dashboard's `web` service settings (this triggers the first deploy from commit `902c2dd`).
+6. Wait for the deploy to reach "Success" (`railway logs` to watch).
+7. `bash scripts/run_f1_1_verifications.sh` — runs the 12 checks, halts on first failure.
+8. Fill in any remaining manual fields in `docs/f1.1-verification-log.md` (deploy IDs, sign-off).
+9. Commit the completed log.
+
+**Items this prep did NOT do (and why):**
+- The actual `railway init` / `railway add` / `railway volume add` calls — they require a logged-in operator. The scripts issue them; they don't pre-execute them.
+- The on-Railway verifications themselves — they require a live service. The runner script issues them; it doesn't pre-execute them.
+- The "Stop and ask on collision" path was chosen per the user's T2 choice, so the provision script halts cleanly if the name is taken.
 
 ### Test Plan
 
