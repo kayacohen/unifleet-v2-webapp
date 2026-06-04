@@ -1,0 +1,14 @@
+# docker-compose.test.yml — overrides for running pytest inside the web container.
+#
+# The base `docker-compose.yml` only bind-mounts `data/`, `static/`, `templates/`.
+# When we run tests (`make test-db`), we additionally need the source code and
+# test files visible inside the container. This override adds those mounts.
+#
+# Invoke with: `docker compose -f docker-compose.yml -f docker-compose.test.yml ...`
+# (the `test-db` Makefile target does this for you)
+
+services:
+  web:
+    volumes:
+      - ./db:/app/db
+      - ./tests:/app/tests

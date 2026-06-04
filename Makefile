@@ -5,7 +5,7 @@ COMPOSE := docker compose
 
 .DEFAULT_GOAL := help
 
-.PHONY: help up up-d down clean logs shell psql verify test restart build
+.PHONY: help up up-d down clean logs shell psql verify test test-db restart build
 
 help: ## Show this help
 	@printf "Local dev targets:\n"
@@ -44,3 +44,7 @@ verify: ## Run the F1.1 build probe inside the web container
 test: ## Run the pytest suite in a clean one-shot container (no Postgres needed)
 	docker run --rm -v "$(PWD):/app" -w /app python:3.11-slim sh -c \
 	  "pip install poetry && poetry install && poetry run pytest"
+
+test-db: ## Run pytest inside the web container (uses unifleet-db on the docker network)
+	$(COMPOSE) -f docker-compose.yml -f docker-compose.test.yml run --rm web \
+	  sh -c "pip install --quiet pytest && pytest"
