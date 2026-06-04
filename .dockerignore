@@ -1,0 +1,53 @@
+# .dockerignore — keep the image lean and the build context fast.
+# The bind-mount in docker-compose.yml overlays ./data onto /app/data at
+# runtime, so the image itself only needs source code + versioned assets.
+# Runtime CSV/JSON files are gitignored at the host and need not be baked in.
+
+# VCS
+.git/
+.gitignore
+.github/
+
+# Python cache / bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtualenvs
+.venv/
+venv/
+env/
+
+# IDE / editor
+.idea/
+.vscode/
+.DS_Store
+
+# Local env file (secrets)
+.env
+
+# Tests (not needed in the prod image; dev deps are excluded by `poetry install --no-dev`)
+tests/
+
+# Replit-specific (irrelevant outside Replit)
+.replit
+.replit.nix
+
+# Docs and reports (not needed in container)
+docs/
+APP_REPORT.md
+README.md
+
+# Operator shell scripts (run on the host, not in the container)
+scripts/provision_railway.sh
+scripts/run_f1_1_verifications.sh
+
+# Docker itself
+Dockerfile
+.dockerignore
+docker-compose.yml
+Makefile

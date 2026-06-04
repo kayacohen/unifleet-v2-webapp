@@ -1,0 +1,60 @@
+# docker-compose.yml — local dev stack for the UniFleet v2 webapp.
+#
+# Brings up two services:
+#   - web: the Flask app (gunicorn), built from ./Dockerfile
+#   - db:  Postgres 16, exposed for forward-compat with Phase 2 of the migration
+#          (the current app's DBRepo uses SQLite, not Postgres, but having the
+#          container running means the build probe can connect and Phase 2 has
+#          a real DB to point at).
+#
+# The web service uses PERSISTENCE_BACKEND=csv (the app's current default) so
+# data is read from / written to the bind-mounted ./data directory on the host.
+# To exercise the SQLite path instead, set PERSISTENCE_BACKEND=db in .env.
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: unifleet-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-unifleet}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-unifleet_dev_pw}
+      POSTGRES_DB: ${POSTGRES_DB:-unifleet}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-unifleet} -d ${POSTGRES_DB:-unifleet}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    # No host port mapping: the web service talks to db via the docker network.
+    # Use `make psql` (docker compose exec) to open a psql session locally.
+    # To expose the DB on the host (e.g., to connect from a local IDE), add:
+    #   ports: ["5432:5432"]
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: unifleet-web
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PORT: 5000
+      BASE_URL: ${BASE_URL:-http://localhost:5000}
+      PERSISTENCE_BACKEND: ${PERSISTENCE_BACKEND:-csv}
+      DATABASE_URL: ${DATABASE_URL:-postgresql://unifleet:unifleet_dev_pw@db:5432/unifleet}
+      SUPPLIER_API_TOKEN: ${SUPPLIER_API_TOKEN:-unifleet2025mvp}
+      ADMIN_KEY: ${ADMIN_KEY:-unifleet-admin}
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./data:/app/data
+      - ./static:/app/static
+      - ./templates:/app/templates
+
+volumes:
+  pgdata:
+    name: unifleet-pgdata
