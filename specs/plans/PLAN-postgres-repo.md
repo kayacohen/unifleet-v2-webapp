@@ -75,18 +75,18 @@ tests for all of the above.
 
 **Test count:** 11 + 6 = 17
 
-### T3 — booking + dynamic update
-> **Status:** not started
-> **Effort:** m
+### T3 — integration test
+> **Status:** done
+> **Effort:** s
 > **Priority:** high
 > **Depends on:** T2
 
-Implement `create_unverified_booking` (the method DBRepo never had)
-and `update_voucher_fields` (the other missing method). Both involve
-applying app-side defaults (status='Unverified', generate voucher_id,
-refuel_datetime → transaction_date/expected_refill_date fallback, mirror
-`*_php` → legacy columns). Add tests + integration test that round-trips
-book → approve → redeem.
+End-to-end test that walks the full voucher lifecycle through a
+single `PostgresRepo` instance. Catches cross-method interaction
+bugs that the per-method tests miss.
 
-**Test count:** ~8 (create_unverified × 4, update_voucher_fields × 3,
-integration × 1)
+**Deliverable:** `tests/test_postgres_repo_integration.py` (5 tests)
+
+**Test count:** 5 (full lifecycle, list_recent sees new voucher,
+redeem-then-unredeem clears timestamp, never-existed returns None,
+unknown column is ignored)
