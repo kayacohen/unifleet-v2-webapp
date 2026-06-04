@@ -1,0 +1,8 @@
+[build]
+command = "poetry install --no-dev --no-interaction"
+
+[deploy]
+startCommand = "gunicorn --bind 0.0.0.0:$PORT sanity_app:app"
+
+[nix]
+packages = ["freetype", "glibcLocales"]
