@@ -369,3 +369,222 @@ def test_append_vouchers_empty_string_becomes_null(schema_db):
 
     assert row["station"] is None
     assert row["driver_name"] is None
+
+
+# ============================================================
+# create_unverified_booking
+# ============================================================
+
+def test_create_unverified_booking_with_minimal_data(schema_db):
+    """A booking created from a sparse dict still has voucher_id and status='Unverified'."""
+    repo = PostgresRepo(dsn=schema_db)
+    try:
+        result = repo.create_unverified_booking({
+            "driver_name": "Test Driver",
+            "vehicle_plate": "ABC123",
+        })
+    finally:
+        repo.close()
+
+    assert result["status"] == "Unverified"
+    assert result["driver_name"] == "Test Driver"
+    assert result["vehicle_plate"] == "ABC123"
+    assert result["voucher_id"]  # auto-generated
+    assert result["voucher_id"].startswith("UF-")
+    # created_at and updated_at are auto-set
+    assert result["created_at"] is not None
+    assert result["updated_at"] is not None
+
+
+def test_create_unverified_booking_returns_persisted_row(schema_db):
+    """The returned dict matches what's actually in the DB (get_voucher)."""
+    repo = PostgresRepo(dsn=schema_db)
+    try:
+        result = repo.create_unverified_booking({
+            "driver_name": "Round Trip Driver",
+            "vehicle_plate": "PLATE99",
+        })
+        vid = result["voucher_id"]
+        fetched = repo.get_voucher(vid)
+    finally:
+        repo.close()
+
+    assert fetched is not None
+    assert fetched["voucher_id"] == vid
+    assert fetched["status"] == "Unverified"
+    assert fetched["driver_name"] == "Round Trip Driver"
+
+
+def test_create_unverified_booking_respects_provided_voucher_id(schema_db):
+    """If caller provides a voucher_id, it's used (not auto-generated)."""
+    repo = PostgresRepo(dsn=schema_db)
+    try:
+        result = repo.create_unverified_booking({
+            "voucher_id": "UF-CUSTOM-ID-0001",
+            "driver_name": "Custom ID Driver",
+        })
+    finally:
+        repo.close()
+
+    assert result["voucher_id"] == "UF-CUSTOM-ID-0001"
+
+
+def test_create_unverified_booking_refuel_datetime_fills_expected_refill_date(schema_db):
+    """refuel_datetime is used as expected_refill_date when the latter is empty."""
+    repo = PostgresRepo(dsn=schema_db)
+    try:
+        result = repo.create_unverified_booking({
+            "refuel_datetime": "2026-07-15T08:00:00+00:00",
+            "driver_name": "Refill Driver",
+        })
+    finally:
+        repo.close()
+
+    assert result["expected_refill_date"] is not None
+    assert result["transaction_date"] is not None
+    # Both dates should be set from the refuel_datetime
+    assert "2026-07-15" in str(result["expected_refill_date"])
+    assert "2026-07-15" in str(result["transaction_date"])
+
+
+def test_create_unverified_booking_does_not_overwrite_provided_dates(schema_db):
+    """If the caller already provided expected_refill_date, refuel_datetime
+    should NOT overwrite it (fallback only kicks in for empty values)."""
+    repo = PostgresRepo(dsn=schema_db)
+    try:
+        result = repo.create_unverified_booking({
+            "refuel_datetime": "2026-07-15T08:00:00+00:00",
+            "expected_refill_date": "2026-08-01T00:00:00+00:00",
+            "transaction_date": "2026-08-01T00:00:00+00:00",
+            "driver_name": "Keep Dates Driver",
+        })
+    finally:
+        repo.close()
+
+    # Provided dates are preserved, not overwritten by refuel_datetime
+    assert "2026-08-01" in str(result["expected_refill_date"])
+    assert "2026-08-01" in str(result["transaction_date"])
+
+
+# ============================================================
+# update_voucher_fields
+# ============================================================
+
+def test_update_voucher_fields_single_field(schema_db):
+    """A single field in the dict is updated; others untouched."""
+    repo = PostgresRepo(dsn=schema_db)
+    try:
+        repo.append_vouchers([{
+            "voucher_id": "UF-20260605-UPF01",
+            "status": "Unverified",
+            "driver_name": "Original Driver",
+        }])
+        repo.update_voucher_fields("UF-20260605-UPF01", {
+            "driver_name": "Updated Driver",
+        })
+        row = repo.get_voucher("UF-20260605-UPF01")
+    finally:
+        repo.close()
+
+    assert row["driver_name"] == "Updated Driver"
+    assert row["status"] == "Unverified"  # untouched
+
+
+def test_update_voucher_fields_multiple_fields(schema_db):
+    """Multiple fields in the dict are all updated."""
+    repo = PostgresRepo(dsn=schema_db)
+    try:
+        repo.append_vouchers([{
+            "voucher_id": "UF-20260605-UPF02",
+            "status": "Unverified",
+            "driver_name": "Original",
+            "vehicle_plate": "OLD-PLATE",
+        }])
+        repo.update_voucher_fields("UF-20260605-UPF02", {
+            "driver_name": "New Name",
+            "vehicle_plate": "NEW-PLATE",
+            "live_price_php_per_liter": 58.75,
+        })
+        row = repo.get_voucher("UF-20260605-UPF02")
+    finally:
+        repo.close()
+
+    assert row["driver_name"] == "New Name"
+    assert row["vehicle_plate"] == "NEW-PLATE"
+    from decimal import Decimal
+    assert row["live_price_php_per_liter"] == Decimal("58.7500")
+
+
+def test_update_voucher_fields_bumps_updated_at(schema_db):
+    """updated_at is set to a non-NULL value, >= the previous one."""
+    repo = PostgresRepo(dsn=schema_db)
+    try:
+        repo.append_vouchers([{
+            "voucher_id": "UF-20260605-UPF03",
+            "status": "Unverified",
+        }])
+        before = repo.get_voucher("UF-20260605-UPF03")
+        repo.update_voucher_fields("UF-20260605-UPF03", {
+            "driver_name": "New Name",
+        })
+        after = repo.get_voucher("UF-20260605-UPF03")
+    finally:
+        repo.close()
+
+    assert before["updated_at"] is not None
+    assert after["updated_at"] is not None
+    assert after["updated_at"] >= before["updated_at"]
+
+
+def test_update_voucher_fields_missing_voucher_raises(schema_db):
+    """Updating a non-existent voucher raises KeyError."""
+    repo = PostgresRepo(dsn=schema_db)
+    try:
+        with pytest.raises(KeyError):
+            repo.update_voucher_fields("UF-DOES-NOT-EXIST", {
+                "driver_name": "Ghost Driver",
+            })
+    finally:
+        repo.close()
+
+
+def test_update_voucher_fields_mirrors_discount_total_php(schema_db):
+    """Setting discount_total_php also updates discount_total (legacy column)."""
+    repo = PostgresRepo(dsn=schema_db)
+    try:
+        repo.append_vouchers([{
+            "voucher_id": "UF-20260605-UPF04",
+            "status": "Unverified",
+        }])
+        repo.update_voucher_fields("UF-20260605-UPF04", {
+            "discount_total_php": 12.50,
+        })
+        row = repo.get_voucher("UF-20260605-UPF04")
+    finally:
+        repo.close()
+
+    from decimal import Decimal
+    assert row["discount_total_php"] == Decimal("12.50")
+    # discount_total (legacy) should mirror the new value
+    assert row["discount_total"] == Decimal("12.50")
+
+
+def test_update_voucher_fields_mirrors_total_dispensed_php(schema_db):
+    """Setting total_dispensed_php also updates total_dispensed (legacy column)."""
+    repo = PostgresRepo(dsn=schema_db)
+    try:
+        repo.append_vouchers([{
+            "voucher_id": "UF-20260605-UPF05",
+            "status": "Unverified",
+        }])
+        repo.update_voucher_fields("UF-20260605-UPF05", {
+            "total_dispensed_php": 200.00,
+        })
+        row = repo.get_voucher("UF-20260605-UPF05")
+    finally:
+        repo.close()
+
+    from decimal import Decimal
+    assert row["total_dispensed_php"] == Decimal("200.00")
+    # total_dispensed (legacy) should mirror
+    assert row["total_dispensed"] == Decimal("200.00")

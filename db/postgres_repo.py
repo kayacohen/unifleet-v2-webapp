@@ -17,6 +17,8 @@ The DSN can also come from the DATABASE_URL / UNIFLEET_DB_DSN env var.
 """
 
 import os
+import random
+import string
 from datetime import datetime, timezone
 from typing import List, Dict, Optional
 
@@ -53,6 +55,12 @@ def _now_or(v):
     if v is None or v == "":
         return datetime.now(timezone.utc)
     return v
+
+
+def _gen_voucher_id() -> str:
+    """Generate a CSV-style voucher ID: UF-YYYYMMDD-XXXXX (5-char salt)."""
+    salt = "".join(random.choices(string.ascii_uppercase + string.digits, k=5))
+    return f"UF-{datetime.now(timezone.utc).strftime('%Y%m%d')}-{salt}"
 
 
 class PostgresRepo:
@@ -198,4 +206,127 @@ class PostgresRepo:
                         for c in cols
                     ]
                     cur.execute(sql, vals)
+            conn.commit()
+
+    # ============================================================
+    # Complex writes (CSVRepo parity)
+    # ============================================================
+
+    def create_unverified_booking(self, data: Dict) -> Dict:
+        """Create a single Unverified booking row.
+
+        Mirrors the CSVRepo contract:
+          - Start with a VOUCHER_COLUMNS-shaped row of empties.
+          - Overlay `data` (caller-supplied fields win).
+          - If refuel_datetime is provided and expected_refill_date /
+            transaction_date are empty, fill them from refuel_datetime.
+          - Generate a voucher_id (UF-YYYYMMDD-XXXXX) if missing.
+          - Force status='Unverified' and clear redemption_timestamp.
+          - Set created_at and updated_at to now.
+          - Insert the row and return it as a dict.
+        """
+        # Build the row shape from VOUCHER_COLUMNS (caller can pass FK
+        # columns station_id / account_code, which we don't put in the
+        # shape but the append_vouchers helper handles).
+        row: Dict = {c: None for c in VOUCHER_COLUMNS}
+        for k, v in (data or {}).items():
+            if k in row:
+                row[k] = v
+
+        # refuel_datetime fallback for expected_refill_date / transaction_date
+        rd = (data or {}).get("refuel_datetime") or row.get("refuel_datetime")
+        if rd and not row.get("expected_refill_date"):
+            row["expected_refill_date"] = rd
+        if rd and not row.get("transaction_date"):
+            row["transaction_date"] = rd
+
+        # Voucher ID: respect caller-supplied, else generate
+        provided_vid = (str(row.get("voucher_id") or "").strip())
+        row["voucher_id"] = provided_vid or _gen_voucher_id()
+
+        # Force status / clear redemption timestamp
+        row["status"] = "Unverified"
+        row["redemption_timestamp"] = None
+
+        # Auto-set timestamps
+        now = datetime.now(timezone.utc)
+        row["created_at"] = row.get("created_at") or now
+        row["updated_at"] = row.get("updated_at") or now
+
+        # Pass through FK columns if the caller supplied them
+        if data and data.get("station_id") is not None:
+            row["station_id"] = data["station_id"]
+        if data and data.get("account_code") is not None:
+            row["account_code"] = data["account_code"]
+
+        # Insert (uses append_vouchers for the UPSERT semantics)
+        self.append_vouchers([row])
+
+        # Return the persisted row (re-read for Decimal/Date normalization)
+        return self.get_voucher(row["voucher_id"])
+
+    def update_voucher_fields(self, voucher_id: str, fields: Dict):
+        """Update arbitrary columns for a voucher.
+
+        Mirrors the CSVRepo contract:
+          - Updates only the fields supplied in `fields` (plus updated_at).
+          - Bumps updated_at to NOW().
+          - Applies the `*_php` -> legacy-column mirrors:
+              discount_total_php -> discount_total
+              total_dispensed_php -> total_dispensed
+          - Raises KeyError if the voucher does not exist.
+        """
+        if not fields:
+            # Nothing to update except updated_at — still do that for
+            # symmetry with the CSVRepo behavior.
+            with self._pool.connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "UPDATE vouchers SET updated_at = NOW() "
+                        "WHERE voucher_id = %s",
+                        (voucher_id,),
+                    )
+                    if cur.rowcount == 0:
+                        raise KeyError(f"voucher not found: {voucher_id}")
+                conn.commit()
+            return
+
+        # Build the SET clause. Only columns present in the schema are
+        # accepted; unknown columns are silently ignored (CSVRepo would
+        # have added them as new columns, but in Postgres we reject).
+        schema_cols = set(_VOUCHER_INSERT_COLUMNS) | {"updated_at"}
+        set_clauses = []
+        params: List = []
+        for col, val in fields.items():
+            if col in ("voucher_id", "created_at"):
+                # Never let a caller overwrite PK or created_at
+                continue
+            if col in schema_cols:
+                set_clauses.append(f"{col} = %s")
+                params.append(_nullable(val))
+
+        # Mirrors: *_php -> legacy column
+        mirrors = {
+            "discount_total_php": "discount_total",
+            "total_dispensed_php": "total_dispensed",
+        }
+        for src, dst in mirrors.items():
+            if src in fields and dst in schema_cols:
+                set_clauses.append(f"{dst} = %s")
+                params.append(_nullable(fields[src]))
+
+        # Always bump updated_at
+        set_clauses.append("updated_at = NOW()")
+
+        params.append(voucher_id)
+        sql = (
+            f"UPDATE vouchers SET {', '.join(set_clauses)} "
+            f"WHERE voucher_id = %s"
+        )
+
+        with self._pool.connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(sql, params)
+                if cur.rowcount == 0:
+                    raise KeyError(f"voucher not found: {voucher_id}")
             conn.commit()

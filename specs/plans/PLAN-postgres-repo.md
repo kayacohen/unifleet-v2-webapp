@@ -54,18 +54,26 @@ Write round-trip tests in `tests/test_postgres_repo.py`.
 - `db/postgres_repo.py` — class with pool + 5 methods
 - `tests/test_postgres_repo.py` — 18 tests for the 5 methods
 
-### T2 — status + bulk
-> **Status:** not started
+### T2 — complex writes + get_repo wiring
+> **Status:** done
 > **Effort:** s
 > **Priority:** high
 > **Depends on:** T1
 
-Implement `set_status` and `append_vouchers` (UPSERT). Wire
-`get_repo(backend='pg')` in `persistence.py` to instantiate
-`PostgresRepo`. Add tests for both methods.
+Implement `create_unverified_booking` and `update_voucher_fields` (the
+two methods DBRepo never had). Wire `get_repo(backend='pg' or
+'postgres')` in `persistence.py` to instantiate `PostgresRepo`. Add
+tests for all of the above.
 
-**Test count:** ~7 (set_status × 3, append_vouchers × 4: empty, single,
-upsert, NULL handling)
+**Deliverables:**
+- `db/postgres_repo.py` — `create_unverified_booking`, `update_voucher_fields`
+- `persistence.py` — `get_repo` dispatches 'pg'/'postgres' to `PostgresRepo`
+- `tests/test_persistence.py` — 6 tests for the dispatcher
+- `tests/test_postgres_repo.py` — 11 new tests for the 2 new methods
+- `docker-compose.test.yml` — bind-mount full repo (so source edits
+  are picked up without rebuilding the image)
+
+**Test count:** 11 + 6 = 17
 
 ### T3 — booking + dynamic update
 > **Status:** not started

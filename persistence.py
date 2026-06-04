@@ -6,15 +6,26 @@ from datetime import datetime
 import random
 import string
 
+from db.postgres_repo import PostgresRepo
+
 MASTER_CSV = "data/master_vouchers.csv"
 
 def _ensure_dirs():
     os.makedirs("data", exist_ok=True)
 
 def get_repo(backend: str):
+    """Factory: instantiate the right Repo implementation.
+
+    backend values:
+      - 'csv' (default) -> CSVRepo (legacy, in-process pandas dataframe)
+      - 'db' -> DBRepo (legacy SQLite, only 5 of 7 methods implemented)
+      - 'pg' or 'postgres' -> PostgresRepo (F2.2, full Repo interface)
+    """
     backend = (backend or "csv").lower()
     if backend == "db":
         return DBRepo()
+    if backend in ("pg", "postgres"):
+        return PostgresRepo()
     return CSVRepo()
 
 def _now_iso() -> str:

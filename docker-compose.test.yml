@@ -6,9 +6,15 @@
 #
 # Invoke with: `docker compose -f docker-compose.yml -f docker-compose.test.yml ...`
 # (the `test-db` Makefile target does this for you)
+#
+# Mount layout:
+#   - ./:/app/         full repo bind-mount (overrides the COPY . . baked in
+#                      to the image), so source edits are reflected immediately
+#                      without rebuilding
+#   - the .pytest_cache, __pycache__, and other generated dirs still live
+#     inside the container, not on the host (they're created at runtime)
 
 services:
   web:
     volumes:
-      - ./db:/app/db
-      - ./tests:/app/tests
+      - ./:/app/
