@@ -175,9 +175,12 @@ Write the F2.6 plan doc and commit + push.
   references the old path.
 - **Customers CSV write path changed**: `data/customers.csv` →
   `/app/data/customers.csv` (or `/data/customers.csv` on Railway).
-  The register flow still writes a CSV instead of the Postgres
-  `customers` table; this is a known Phase 2 cleanup item (the
-  Postgres table is the source of truth per F2.5).
+  The register flow still writes a CSV; this is by design — the
+  CSV is the live source of truth for `/register` and `/book`
+  regardless of `PERSISTENCE_BACKEND`. The Postgres `customers`
+  table (populated by F2.5) is a backfilled snapshot used for
+  query/report purposes; the CSV continues to receive new
+  registrations.
 - **`/data` defaults to `/data`**, not `./data`. Local docker
   sets `UNIFLEET_DATA_DIR=/app/data` to preserve the existing
   bind-mount experience. Bare-host tests work either way because
@@ -185,14 +188,14 @@ Write the F2.6 plan doc and commit + push.
 
 ## Open follow-ups
 
-- **Phase 2 cleanup** (post-Railway cutover):
-  - Switch `/register` to write to the `customers` PG table
-  - Delete legacy `data/*.csv` and `data/*.json` files
-  - Delete `data_paths.LEGACY_*` constants (no longer needed)
-  - Delete `CSVRepo` and `DBRepo` from `persistence.py`
 - **Volume backup strategy** on Railway (out of scope for F2.6)
 - **PDF dir reserved** for future on-disk PDF caching
   (`assets/pdfs/`); not used yet
+- **NOT in scope (per user direction)**:
+  - Do NOT delete `data/*.csv|json` files (CSV mode stays supported)
+  - Do NOT drop `CSVRepo` or `DBRepo` from `persistence.py`
+  - Do NOT change `PERSISTENCE_BACKEND` default from `'csv'` to `'pg'`
+  - The CSV/DB backends remain first-class supported options
 
 ## Deployment notes
 
