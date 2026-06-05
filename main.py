@@ -28,6 +28,9 @@ except Exception as _e:
 # NEW: discounts storage
 from discount_store import DiscountStore, DiscountValueError
 
+# F2.4: audit log is now Postgres-backed (audit_log.audit_log table)
+from audit_log import append_audit
+
 app = Flask(__name__)
 
 # =========================
@@ -124,34 +127,8 @@ PAYMENT_INFO = {
 
 
 # ===== Tiny CSV-safe audit log =====
-AUDIT_PATH = "data/ops_audit_log.csv"
-AUDIT_FIELDS = [
-    "timestamp", "action", "voucher_id",
-    "from_status", "to_status",
-    "route", "actor_ip", "user_agent", "note"
-]
-
-def append_audit(action, voucher_id, from_status="", to_status="", note=""):
-    os.makedirs(os.path.dirname(AUDIT_PATH), exist_ok=True)
-    is_new = not os.path.isfile(AUDIT_PATH)
-    try:
-        with open(AUDIT_PATH, "a", newline="", encoding="utf-8-sig") as f:
-            writer = csv.DictWriter(f, fieldnames=AUDIT_FIELDS)
-            if is_new:
-                writer.writeheader()
-            writer.writerow({
-                "timestamp": datetime.now().isoformat(timespec="seconds"),
-                "action": action,
-                "voucher_id": voucher_id,
-                "from_status": from_status or "",
-                "to_status": to_status or "",
-                "route": request.path,
-                "actor_ip": request.headers.get("X-Forwarded-For", request.remote_addr),
-                "user_agent": request.headers.get("User-Agent", ""),
-                "note": note or ""
-            })
-    except Exception as e:
-        print(f"⚠️ Audit log write failed: {e}")
+# F2.4: append_audit now lives in audit_log.py and writes to the
+# Postgres audit_log table instead of data/ops_audit_log.csv.
 
 # ===== Price change history (CSV audit) =====
 PRICE_HISTORY_PATH = "data/price_history.csv"
