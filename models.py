@@ -1,5 +1,7 @@
 # models.py
 
+import data_paths  # F2.6: paths come from data_paths
+
 VOUCHER_COLUMNS = [
     "voucher_id",
     "station",
@@ -37,7 +39,7 @@ VOUCHER_COLUMNS = [
 ]
 
 
-SQLITE_PATH = "data/unifleet.db"
+SQLITE_PATH = str(data_paths.LEGACY_UNIFLEET_DB)
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS vouchers (

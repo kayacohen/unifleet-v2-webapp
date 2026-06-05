@@ -2,7 +2,7 @@
 audit_log.py — Postgres-backed ops audit log.
 
 F2.4 of the UniFleet v2 → Railway + Postgres migration. Replaces
-the CSV-on-disk implementation in main.py (data/ops_audit_log.csv)
+the CSV-on-disk implementation in main.py (data_paths.LEGACY_OPS_AUDIT_LOG_CSV)
 with an append-only insert into the F2.1 schema's `audit_log`
 table. The public function signature is preserved so call sites
 in main.py do not change.

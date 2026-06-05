@@ -32,6 +32,7 @@ from zoneinfo import ZoneInfo
 
 from psycopg.rows import dict_row
 
+import data_paths  # F2.6: back-compat path constants now resolve via data_paths
 from db.pool import get_pool
 
 
@@ -41,8 +42,8 @@ class DiscountValueError(ValueError):
 
 
 # Back-compat path constants; no longer used at runtime.
-DEFAULT_JSON_PATH = "data/discount_store.json"
-DEFAULT_HISTORY_CSV_PATH = "data/discount_history.csv"
+DEFAULT_JSON_PATH = str(data_paths.LEGACY_DISCOUNT_STORE_JSON)
+DEFAULT_HISTORY_CSV_PATH = str(data_paths.LEGACY_DISCOUNT_HISTORY_CSV)
 VALUE_PRECISION_DECIMALS = 4
 
 

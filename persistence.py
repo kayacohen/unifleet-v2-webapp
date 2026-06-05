@@ -1,17 +1,19 @@
 # persistence.py
 import os, sqlite3, pandas as pd
 from typing import List, Dict, Optional
-from models import VOUCHER_COLUMNS, SQLITE_PATH, SCHEMA_SQL
+from models import VOUCHER_COLUMNS, SCHEMA_SQL
 from datetime import datetime
 import random
 import string
 
+import data_paths  # F2.6: paths come from data_paths
 from db.postgres_repo import PostgresRepo
 
-MASTER_CSV = "data/master_vouchers.csv"
+MASTER_CSV = str(data_paths.LEGACY_MASTER_VOUCHERS_CSV)
+SQLITE_PATH = str(data_paths.LEGACY_UNIFLEET_DB)
 
 def _ensure_dirs():
-    os.makedirs("data", exist_ok=True)
+    data_paths.ensure_dirs()
 
 def get_repo(backend: str):
     """Factory: instantiate the right Repo implementation.

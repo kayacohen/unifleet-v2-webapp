@@ -1,6 +1,6 @@
 from flask import (
     Flask, render_template, request, redirect, send_file, abort,
-    url_for, flash, jsonify, make_response
+    url_for, flash, jsonify, make_response, send_from_directory
 )
 import os
 import io
@@ -30,6 +30,10 @@ from discount_store import DiscountStore, DiscountValueError
 
 # F2.4: audit log is now Postgres-backed (audit_log.audit_log table)
 from audit_log import append_audit
+
+# F2.6: central file-path registry (Railway Volume at /data)
+import data_paths
+data_paths.ensure_dirs()
 
 app = Flask(__name__)
 
@@ -100,9 +104,9 @@ app.secret_key = 'your_secret_key_here'  # Required for flashing messages
 SUPPLIER_API_TOKEN = os.environ.get("SUPPLIER_API_TOKEN", "unifleet2025mvp")  # Default token
 ADMIN_KEY = os.environ.get("ADMIN_KEY", "unifleet-admin")
 
-UPLOAD_FOLDER = "uploads"
+UPLOAD_FOLDER = str(data_paths.UPLOADS_DIR)
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-os.makedirs("data/presets", exist_ok=True)
+# presets dir is created by data_paths.ensure_dirs() above
 
 # Initialize price store JSON on startup (creates data/station_prices.json if missing)
 price_store.init_if_missing()
@@ -131,7 +135,8 @@ PAYMENT_INFO = {
 # Postgres audit_log table instead of data/ops_audit_log.csv.
 
 # ===== Price change history (CSV audit) =====
-PRICE_HISTORY_PATH = "data/price_history.csv"
+# F2.6: path comes from data_paths so it lives on the Volume.
+PRICE_HISTORY_PATH = str(data_paths.PRICE_HISTORY_CSV)
 PRICE_HISTORY_FIELDS = [
     "timestamp_iso", "timestamp_unix", "station_id",
     "old_price", "new_price", "actor_ip", "user_agent"
@@ -195,6 +200,14 @@ def _check_admin_key(req):
 def home():
     return redirect("/form")
 
+# F2.6: serve QR PNGs (and other generated assets) from the volume.
+# Templates and download links should reference
+#   {{ data_paths.QR_ROUTE }}/{{ voucher_id }}_Official.png
+# This route resolves to data_paths.QR_DIR on disk.
+@app.route(data_paths.QR_ROUTE + "/<path:filename>")
+def serve_qr_asset(filename):
+    return send_from_directory(str(data_paths.QR_DIR), filename)
+
 @app.route('/form')
 def form():
     # existing voucher table data
@@ -202,8 +215,8 @@ def form():
         vouchers = repo.list_recent_vouchers(limit=50)
         for row in vouchers:
             vid = str(row.get("voucher_id", "")).strip()
-            png_1 = os.path.exists(f"static/qr_codes/{vid}.png")
-            png_2 = os.path.exists(f"static/qr_codes/{vid}_Official.png")
+            png_1 = data_paths.qr_png_path(vid).exists()
+            png_2 = data_paths.official_qr_png_path(vid).exists()
             row['png_exists'] = png_1 and png_2
     except Exception as e:
         print(f"⚠️ Error loading vouchers: {e}")
@@ -232,7 +245,7 @@ def form():
 def upload_csv():
     uploaded_file = request.files['csv_file']
     if uploaded_file.filename != '':
-        filepath = os.path.join("data", "unifleet_web_redemptions_input.csv")
+        filepath = str(data_paths.UPLOADED_REDEMPTIONS_CSV)
         uploaded_file.save(filepath)
         result = subprocess.run(["python3", "generate_voucher.py"], capture_output=True, text=True)
         print(result.stdout)
@@ -242,7 +255,7 @@ def upload_csv():
 @app.route('/delete_png/<voucher_id>', methods=['POST'])
 def delete_png(voucher_id):
     try:
-        for path in [f"static/qr_codes/{voucher_id}.png", f"static/qr_codes/{voucher_id}_Official.png"]:
+        for path in [str(data_paths.qr_png_path(voucher_id)), str(data_paths.official_qr_png_path(voucher_id))]:
             if os.path.exists(path):
                 os.remove(path)
         return redirect(url_for('form'))
@@ -419,7 +432,7 @@ def register():
             'hq_locations': ''
         }
 
-        customers_path = 'data/customers.csv'
+        customers_path = str(data_paths.CUSTOMERS_CSV)
         if os.path.isfile(customers_path):
             df = pd.read_csv(customers_path, dtype=str)
         else:
@@ -446,8 +459,8 @@ def test_success():
 
 @app.route('/book', methods=['GET', 'POST'])
 def book():
-    customers_path = 'data/customers.csv'
-    booking_path = 'data/requested_vouchers.csv'
+    customers_path = str(data_paths.CUSTOMERS_CSV)
+    booking_path = str(data_paths.LEGACY_REQUESTED_VOUCHERS_CSV)
 
     station_table = []
     station_table_updated_at = ""
@@ -554,7 +567,7 @@ def book():
                     min_refuel=min_refuel
                 )
             base = rows.iloc[0].to_dict()
-            preset_path = f"data/presets/{account_code}_presets.csv"
+            preset_path = str(data_paths.preset_csv_path(account_code))
             presets = pd.read_csv(preset_path, encoding='utf-8-sig').to_dict(orient='records') if os.path.isfile(preset_path) else []
             return render_template(
                 'book.html',
@@ -571,7 +584,7 @@ def book():
         if driver_mode == 'preset' and not request.form.get('driver_select'):
             flash("Please select a preset or switch to 'Add New Driver'", "error")
             base = rows.iloc[0].to_dict()
-            preset_path = f"data/presets/{account_code}_presets.csv"
+            preset_path = str(data_paths.preset_csv_path(account_code))
             presets = pd.read_csv(preset_path, encoding='utf-8-sig').to_dict(orient='records') if os.path.isfile(preset_path) else []
             return render_template(
                 'book.html',
@@ -612,7 +625,7 @@ def book():
             if refuel_dt_mnl < min_refuel_dt:
                 flash("Refuel Date & Time must be at least 24 hours from now (Asia/Manila).", "error")
                 base = rows.iloc[0].to_dict() if not rows.empty else None
-                preset_path = f"data/presets/{account_code}_presets.csv"
+                preset_path = str(data_paths.preset_csv_path(account_code))
                 presets = pd.read_csv(preset_path, encoding='utf-8-sig').to_dict(orient='records') if os.path.isfile(preset_path) else []
                 return render_template(
                     'book.html',
@@ -628,7 +641,7 @@ def book():
             # If parsing fails, treat as invalid
             flash("Please enter a valid Refuel Date & Time (YYYY-MM-DDTHH:MM).", "error")
             base = rows.iloc[0].to_dict() if not rows.empty else None
-            preset_path = f"data/presets/{account_code}_presets.csv"
+            preset_path = str(data_paths.preset_csv_path(account_code))
             presets = pd.read_csv(preset_path, encoding='utf-8-sig').to_dict(orient='records') if os.path.isfile(preset_path) else []
             return render_template(
                 'book.html',
@@ -736,7 +749,7 @@ def book():
         except Exception as e:
             print("⚠️ Failed to create Unverified booking:", e)
 
-        preset_path = f"data/presets/{account_code}_presets.csv"
+        preset_path = str(data_paths.preset_csv_path(account_code))
         existing = pd.read_csv(preset_path, encoding='utf-8-sig') if os.path.isfile(preset_path) else pd.DataFrame()
         plate_key = str(driver_data['vehicle_plate']).strip().upper()
         exists = (
@@ -763,7 +776,7 @@ def book():
 @app.route('/discount-locator')
 def discount_locator():
     try:
-        stations = pd.read_csv('data/stations.csv', encoding='utf-8-sig').to_dict(orient='records')
+        stations = pd.read_csv(str(data_paths.LEGACY_STATIONS_CSV), encoding='utf-8-sig').to_dict(orient='records')
     except Exception as e:
         print(f"⚠️ Error loading station list: {e}")
         stations = []
@@ -907,7 +920,7 @@ def export_supplier_csv():
             })
 
 
-        export_path = 'data/supplier_export.csv'
+        export_path = str(data_paths.SUPPLIER_EXPORT_CSV)
         pd.DataFrame(out_rows).to_csv(export_path, index=False, encoding='utf-8-sig')
         return send_file(export_path, as_attachment=True)
     except Exception as e:
@@ -1169,7 +1182,7 @@ def supplier_sheet_pdf():
         vouchers=vouchers,
         target_station_ids=set(selected_ids),
         stations=all_stations,
-        logo_path="static/UniFleet Logo.png",
+        logo_path=data_paths.STATIC_LOGO_PATH,
     )
 
     # Manila-dated filename for uniqueness

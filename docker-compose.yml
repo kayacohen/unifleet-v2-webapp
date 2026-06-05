@@ -48,6 +48,9 @@ services:
       DATABASE_URL: ${DATABASE_URL:-postgresql://unifleet:unifleet_dev_pw@db:5432/unifleet}
       SUPPLIER_API_TOKEN: ${SUPPLIER_API_TOKEN:-unifleet2025mvp}
       ADMIN_KEY: ${ADMIN_KEY:-unifleet-admin}
+      # F2.6: data-path root. Local dev bind-mounts the host's ./data
+      # at /app/data; Railway mounts the persistent Volume at /data.
+      UNIFLEET_DATA_DIR: ${UNIFLEET_DATA_DIR:-/app/data}
     ports:
       - "5000:5000"
     volumes:

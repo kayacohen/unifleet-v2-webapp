@@ -8,11 +8,16 @@ from PIL import Image, ImageDraw, ImageFont
 import price_store  # read live prices from station_prices.json
 from persistence import get_repo  # repo abstraction (CSV or DB)
 
+# F2.6: paths come from data_paths so QR PNGs and template/logo
+# assets are resolved against the volume + the image-baked static dir.
+import data_paths
+data_paths.ensure_dirs()
+
 # File paths
-MASTER_VOUCHERS = 'data/master_vouchers.csv'  # retained for compatibility if running in CSV mode
-QR_OUTPUT_DIR = 'static/qr_codes/'
-LOGO_PATH = 'static/UniFleet Logo.png'
-TEMPLATE_PATH = 'static/BRANDED VOUCHER TEMPLATE - UNIFLEET.png'
+MASTER_VOUCHERS = str(data_paths.LEGACY_MASTER_VOUCHERS_CSV)  # CSV-mode back-compat
+QR_OUTPUT_DIR = str(data_paths.QR_DIR) + "/"
+LOGO_PATH = data_paths.STATIC_LOGO_PATH
+TEMPLATE_PATH = data_paths.STATIC_VOUCHER_TEMPLATE_PATH
 REQUIRED_COLUMNS = [
     'voucher_id', 'station', 'requested_amount_php', 'liters_requested',
     'transaction_date', 'expected_refill_date', 'live_price_php_per_liter',
@@ -28,7 +33,7 @@ BASE_URL = os.environ.get(
     "https://c62ded05-595f-42d6-b59c-55cd5cb986e6-00-287s4ts5huint.sisko.replit.dev"
 ).strip().rstrip("/")
 
-os.makedirs(QR_OUTPUT_DIR, exist_ok=True)
+os.makedirs(QR_OUTPUT_DIR, exist_ok=True)  # F2.6: ensure_dirs() above already created it
 
 # Persistence selector
 PERSISTENCE_BACKEND = os.environ.get("PERSISTENCE_BACKEND", "csv").lower()
@@ -274,5 +279,5 @@ def generate_assets_for_row(row: dict) -> None:
 
 
 if __name__ == "__main__":
-    upload_path = "data/unifleet_web_redemptions_input.csv"
+    upload_path = str(data_paths.UPLOADED_REDEMPTIONS_CSV)
     append_and_generate_vouchers(upload_path)
