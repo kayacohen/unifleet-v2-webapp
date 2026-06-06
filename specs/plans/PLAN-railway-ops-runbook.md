@@ -346,7 +346,7 @@ _Review this document, then run: "Generate task from plan: specs/plans/PLAN-rail
 
 ## Task T1: Write `docs/quickref.md`
 
-> **Status:** not started
+> **Status:** done
 > **Effort:** xs
 > **Priority:** high (unblocks T2; locks in the anchor names the quickref uses to link into the runbook)
 > **Depends on:** None
@@ -392,7 +392,7 @@ Create the 1-page operator cheatsheet. ~80 lines, table-only, links into the run
 
 ## Task T2: Write `docs/runbook.md`
 
-> **Status:** not started
+> **Status:** done
 > **Effort:** l
 > **Priority:** high (unblocks T3 and T4)
 > **Depends on:** T1 (anchor names locked in T1 must be used here)
