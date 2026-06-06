@@ -1,0 +1,37 @@
+# Dockerfile for the Postgres backup cron service.
+# Used by Railway as a Cron Schedule service (not a long-running web
+# service — Railway runs the command on a cron expression, then
+# sleeps the container until the next run).
+#
+# Start command in Railway:
+#   python3 /backup/backup_postgres.py
+#
+# Volume mount: a 2nd volume (e.g. unifleet-pgdata-backups) at
+# /backups.  Env: DATABASE_URL (same as the web service's), and
+# optionally UNIFLEET_BACKUP_S3_BUCKET + AWS_* for the off-platform
+# copy.
+#
+# Why we extend postgres:16-alpine (not python:3.11-slim):
+#   pg_dump is the official tool; it's only in the postgres image.
+#   We add python3 on top for the rotation/S3/logging orchestration
+#   in scripts/backup_postgres.py. Total image size: ~340 MB
+#   (postgres:16-alpine = 280 MB + python3 + boto3 = 60 MB).
+
+FROM postgres:16-alpine
+
+# Add python3 + pip so the orchestration script can run.
+# --no-cache keeps the image small. --break-system-packages is
+# needed because Alpine's python is PEP 668 externally-managed.
+RUN apk add --no-cache python3 py3-pip \
+    && pip3 install --no-cache-dir --break-system-packages boto3
+
+# Copy only the backup script (small surface; avoids the rest of
+# the repo landing in the image).
+WORKDIR /backup
+COPY scripts/backup_postgres.py /backup/backup_postgres.py
+RUN chmod +x /backup/backup_postgres.py
+
+# Cron Schedule services run the entrypoint on schedule, then
+# sleep. stdout goes to Railway's log capture. Non-zero exit
+# surfaces in the Railway UI as a "failed run".
+ENTRYPOINT ["python3", "/backup/backup_postgres.py"]
