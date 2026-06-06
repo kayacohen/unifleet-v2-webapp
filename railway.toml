@@ -2,7 +2,7 @@
 command = "poetry install --no-dev --no-interaction"
 
 [deploy]
-startCommand = "gunicorn --bind 0.0.0.0:$PORT main:app"
+startCommand = "gunicorn --bind 0.0.0.0:5000 main:app"
 
 [nix]
 packages = ["freetype", "glibcLocales"]
