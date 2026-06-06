@@ -88,6 +88,7 @@ restore-pg: ## Restore the latest backup into a fresh DB (unifleet_restore). Doe
 	  $(COMPOSE) exec -T db psql -U $${POSTGRES_USER:-unifleet} -d unifleet_restore -c "\
 	    SELECT 'stations' AS t, COUNT(*) FROM stations \
 	    UNION ALL SELECT 'prices', COUNT(*) FROM prices \
+	    UNION ALL SELECT 'discounts', COUNT(*) FROM discounts \
 	    UNION ALL SELECT 'customers', COUNT(*) FROM customers \
 	    UNION ALL SELECT 'vouchers', COUNT(*) FROM vouchers \
 	    UNION ALL SELECT 'audit_log', COUNT(*) FROM audit_log;"

@@ -108,9 +108,9 @@ After every deploy, run the smoke test list. The first route (`/healthz`) is the
 |---|---|---|---|
 | `/healthz` | GET | 200, body `OK` | App is up, gunicorn workers responding |
 | `/form` | GET | 200, HTML | Public booking form renders (uses `data_paths` + `price_store`) |
-| `/api/ops/vouchers.json` | GET | 200, JSON array | PG read path works; vouchers come back from `PostgresRepo.list_recent` |
 | `/api/v1/prices` | GET | 200, JSON | `price_store` (PG-backed) returns all 19 stations |
 | `/api/v1/discounts` | GET | 200, JSON | `discount_store` (PG-backed) returns all 10 station discounts |
+| `/api/v1/price_preview` | GET | 200, JSON | `price_preview` calculation works (POST form) |
 | `/admin/prices` | GET | 302 (redirect to login) or 200 if logged in | Admin route is reachable, auth gate works |
 | `/assets/qr/<vid>_Official.png` | GET | 200, Content-Type `image/png` | Volume `data` is mounted at `/data`; QR files are served from `data_paths.QR_DIR` |
 | `/supplier-sheet.pdf?token=...` | GET | 200, Content-Type `application/pdf` | reportlab in-memory PDF generation works |
@@ -119,13 +119,13 @@ After every deploy, run the smoke test list. The first route (`/healthz`) is the
 
 ```bash
 URL=https://<web-service>.up.railway.app  # or https://unifleet.asia post-cutover
-for route in /healthz /form /api/ops/vouchers.json /api/v1/prices; do
+for route in /healthz /form /api/v1/prices /api/v1/discounts; do
   status=$(curl -s -o /dev/null -w "%{http_code}" "$URL$route")
   echo "$status $route"
 done
 ```
 
-**Expected output:** `200 /healthz`, `200 /form`, `200 /api/ops/vouchers.json`, `200 /api/v1/prices`. If any of these is `5xx`, see [§on-call-runbook](#on-call-runbook) §1 or §2.
+**Expected output:** `200 /healthz`, `200 /form`, `200 /api/v1/prices`, `200 /api/v1/discounts`. If any of these is `5xx`, see [§on-call-runbook](#on-call-runbook) §1 or §2.
 
 ## 5. Monitoring
 
@@ -307,8 +307,10 @@ cp .env.example .env  # then edit .env if needed
 **Bring up the local stack:**
 
 ```bash
-make up                # starts web + db containers
+make up-d              # starts web + db containers in the background (idempotent — safe to re-run)
 ```
+
+If you want to watch the build logs in the foreground (e.g. to debug a Dockerfile change), use `make up` instead — but be aware it blocks until you Ctrl-C, and it hangs if the stack is already up. For the typical "start the dev stack" use case, `make up-d` is the right command.
 
 **Verify it works:**
 
