@@ -2,7 +2,7 @@
 
 > **Date:** 2026-06-06
 > **Project source:** `specs/plans/PROJECT-migrate-to-railway.md` (F4.4 + F4.5), `specs/plans/PLAN-pg-backup.md` (DB-restore procedure referenced)
-> **Estimated tasks:** ~6 (4 doc-writing tasks + 2 verification tasks)
+> **Estimated tasks:** 4 (2 doc-writing tasks + 2 verification tasks; README link skipped per operator decision)
 > **Planning session:** detailed
 
 ## Summary
@@ -339,3 +339,263 @@ Two markdown docs in the repo (`docs/quickref.md` ~80 lines, `docs/runbook.md` ~
 ---
 _This plan is the input for the generate-tasks skill._
 _Review this document, then run: "Generate task from plan: specs/plans/PLAN-railway-ops-runbook.md"_
+
+---
+
+# Tasks
+
+## Task T1: Write `docs/quickref.md`
+
+> **Status:** not started
+> **Effort:** xs
+> **Priority:** high (unblocks T2; locks in the anchor names the quickref uses to link into the runbook)
+> **Depends on:** None
+
+### Description
+
+Create the 1-page operator cheatsheet. ~80 lines, table-only, links into the runbook via anchor names (which T2 must then use). The "runbook wins" rule is stated at the top of the file: if this file ever disagrees with `docs/runbook.md`, the runbook wins.
+
+### Test Plan
+
+**Not applicable.** The "test" for this task is T3 (command verification) and T4 (env-var reference verification), which walk the runbook (not the quickref) and assert its claims hold. The quickref is structural prose, and structural validation (line count, required tables, anchor format) is captured as a self-check the writer performs in Implementation Notes.
+
+### Implementation Notes
+
+- **Layer(s):** docs/
+- **Pattern reference:** the table-only / decision-tree format from the plan's §Behaviors for `docs/quickref.md`
+- **Key decisions:** table-only (no prose), 100-line budget, "runbook wins" rule at the top, every row links into the runbook by anchor
+- **Sections in order:**
+  1. Title + "runbook wins" rule (~3 lines)
+  2. "If you see X, do Y" table — 8-10 rows covering: service down, 5xx spike, deploy stuck, backup missing, volume full, secret rotation, DB restore pointer, customer report (~50 lines)
+  3. "Top 5 env vars you'll touch most often" table — name, where to set, what it does (~15 lines)
+  4. "3 commands you'll run most often" — exact command, expected output, "if it doesn't match, see runbook" pointer (~10 lines)
+- **Self-check the writer performs before declaring done:** line count ≤ 100, every row in section 2 links to a runbook section by anchor (e.g., `(#deploy-procedure)`), no prose paragraphs, sections 3 and 4 are tables/blocks (not paragraphs)
+- **Anchor names to lock in for T2:** `#deploy-procedure`, `#what-healthy-looks-like`, `#monitoring`, `#rollback-procedure`, `#db-restore`, `#secret-rotation`, `#local-dev-setup`, `#on-call-runbook`, `#backup-verification`, `#env-var-reference`
+
+### Scope Boundaries
+
+- **Only implement:** `docs/quickref.md` (new file)
+- **Do NOT modify:** README (operator decided to skip the README link), main.py, Makefile, any other file
+- **Do NOT add:** prose paragraphs, sections beyond the 3 in the plan, code samples
+- **The quickref is a TABLE, not prose** — this rule is non-negotiable; if the runbook command has 5 steps, the quickref row is "do Y → if fails, do Z" (2 cells), not 5 lines of prose
+
+### Files Expected
+
+**New files:**
+- `docs/quickref.md` (~80 lines, table-only)
+
+**Modified files:** None
+
+**Must NOT modify:** README, main.py, Makefile, `scripts/`, `tests/`
+
+---
+
+## Task T2: Write `docs/runbook.md`
+
+> **Status:** not started
+> **Effort:** l
+> **Priority:** high (unblocks T3 and T4)
+> **Depends on:** T1 (anchor names locked in T1 must be used here)
+
+### Description
+
+Create the canonical operator manual. ~500-700 lines, 12 sections, with cross-references back to the quickref. The single source of truth for deploying, monitoring, rolling back, restoring the DB, and rotating secrets on Railway. The DB restore section reproduces the 6-step procedure from `PLAN-pg-backup.md` inline so the operator doesn't need to open the plan doc during an incident.
+
+### Test Plan
+
+**Not applicable.** Same reasoning as T1. T3 walks every command; T4 walks the env-var reference.
+
+### Implementation Notes
+
+- **Layer(s):** docs/
+- **Pattern reference:** the 12 sections from the plan's §Detailed Specifications for `docs/runbook.md`
+- **Key decisions:** 12 explicit decisions from the plan's Decisions Log must be reflected in prose; runbook wins over quickref; DB restore reproduces the 6-step procedure inline; env-var reference is a table (not a narrative)
+- **Sections in order, with line budgets:**
+  1. Topology (≤ 20 lines) — Project name, service names, DB name, volume names + mount paths, region, domain. One ASCII diagram.
+  2. Dashboard bookmarks (≤ 20 lines) — Direct URLs to: project root, web service deploys history, web service variables, web service metrics, backup service last run, PG database metrics.
+  3. Deploy procedure (≤ 80 lines) — 5 steps (push to `main`, open dashboard, watch deploy logs, curl `/healthz`, smoke test). With the "is it healthy?" check and the "what if it's not" decision rule.
+  4. What "healthy" looks like (≤ 60 lines) — 6-8 smoke-test routes (`/healthz`, `/form`, `/book`, `/redeem`, `/admin/prices`, `/api/ops/vouchers.json`, `/assets/qr/<vid>.png`). Expected response per route.
+  5. Monitoring (≤ 50 lines) — Dashboard panels: web service CPU/memory/request count/response time, PG storage/connections, data volume free space, backup volume free space. What's normal. How often to check.
+  6. Rollback procedure (≤ 60 lines) — Dashboard path, smoke-test sequence, the decision rule (broken deploy vs. unrelated incident), the "previous" fallback, when a rollback is the wrong tool (data corruption → §DB restore).
+  7. DB restore (≤ 100 lines) — Reproduces the 6-step procedure from `PLAN-pg-backup.md` inline. RTO < 30 min, RPO < 24 h. Exact commands.
+  8. Secret rotation (≤ 100 lines) — Table: env var name, purpose, user-visible impact, smoke test, where to set. Order of rotation: `DATABASE_URL` → `secret_key` → `ADMIN_KEY` → `SUPPLIER_API_TOKEN`. One-at-a-time rule.
+  9. Local dev setup (≤ 80 lines) — Step-by-step copy-paste runnable. Poetry install, `.env.example` copy, `make up`, `make test-db`, `make backup` round-trip. Common gotchas.
+  10. On-call runbook (≤ 100 lines) — 8 scenarios in decision-tree format: (1) service down, (2) 5xx spike, (3) backup missing, (4) PG connection exhausted, (5) volume full, (6) deploy stuck, (7) dashboard unavailable, (8) customer reports wrong voucher. Each scenario: 3-5 step decision tree. Escalation path at the bottom.
+  11. Backup verification (≤ 30 lines) — How to manually verify a backup: `make restore-list`, then `make restore-pg` into throwaway DB, then `psql` row counts. When to run: after first nightly backup, then monthly.
+  12. Env var reference (≤ 50 lines) — Table: name, purpose, required? (does the app refuse to boot?), example dev value, where to set, last-rotated date.
+- **Plus:** "Why this runbook doesn't have X" section at the bottom (~10 lines) acknowledging the deferred F3.1-F3.7 hardening and the rationale (operator chose to ship and harden later if needed).
+- **Total:** ~700 lines max
+- **Anchor names** (must match the names T1 links to): `deploy-procedure`, `what-healthy-looks-like`, `monitoring`, `rollback-procedure`, `db-restore`, `secret-rotation`, `local-dev-setup`, `on-call-runbook`, `backup-verification`, `env-var-reference`
+- **Self-check the writer performs before declaring done:** every cross-reference uses anchors (`#section-name`), not full URLs; every section is anchored (H2 headers); section 7 reproduces the 6 DB-restore steps inline; section 12 is a table; line count ≤ 700
+
+### Scope Boundaries
+
+- **Only implement:** `docs/runbook.md` (new file)
+- **Do NOT modify:** any other file (the README link is explicitly skipped per operator decision)
+- **Do NOT add:** CI/CD, third-party APM, automated alerts (all explicit "out of scope" from the plan); code samples longer than 5 lines
+- **Do NOT include:** Replit-specific content (Replit is being decommissioned in F3)
+
+### Files Expected
+
+**New files:**
+- `docs/runbook.md` (~500-700 lines, 12 sections + "Why this runbook doesn't have X" footer)
+
+**Modified files:** None
+
+**Must NOT modify:** README, main.py, Makefile, `scripts/`, `tests/`
+
+---
+
+## Task T3: Verify every command in `docs/runbook.md` works (local + Railway)
+
+> **Status:** not started
+> **Effort:** s
+> **Priority:** high (the runbook is useless if its commands don't work)
+> **Depends on:** T2 AND **#4 (F1.1 T2 on-Railway)** — the Railway pass is blocked on the operator completing the Railway deployment
+
+### Description
+
+For each command in `docs/runbook.md`, execute it. **Local pass** (do now): run against the `unifleet-db` + `web` Docker stack. **Railway pass** (do after #4): run against the live Railway deployment. If a command fails, fix the runbook (or the underlying reality) so it works, and re-run. RED → GREEN → REFACTOR cycle until all commands pass.
+
+### Test Plan
+
+**This IS the test plan.** The "test file" is `docs/runbook.md` itself; the "test scenarios" are the commands in the runbook; the "assertion" is "the command produces the documented output." No pytest file is produced.
+
+#### Test Scenarios
+
+##### Local Docker stack commands (run now)
+
+For each command in the runbook that runs against the local stack, execute it. Pass = documented output matches actual output. Fail = fix the runbook (or the reality) and re-run.
+
+- **`make up` starts the local stack** — GIVEN Docker is running WHEN `make up` is run THEN both `web` and `db` containers are healthy within 30 seconds (verify with `docker compose ps`)
+- **`make test-db` runs all tests** — GIVEN the local stack is up WHEN `make test-db` is run THEN the output ends with "107 passed in <20s" (exact time may vary; success criterion is the count, not the time)
+- **`make backup` creates a `.pgdump` file** — GIVEN the local stack is up WHEN `make backup BACKUP_DIR=/tmp/unifleet-test-backups` is run (override needed because `data/legacy/` is root-owned) THEN a new file appears in `/tmp/unifleet-test-backups/` matching `unifleet-YYYYMMDD-HHMM*.pgdump`
+- **`make restore-list` shows TOC of latest backup** — GIVEN at least one backup file exists WHEN `make restore-list BACKUP_DIR=/tmp/unifleet-test-backups` is run THEN the output shows the TOC of the most recent backup (table names + row counts)
+- **`make restore-pg` restores into `unifleet_restore` DB** — GIVEN a backup file exists WHEN `make restore-pg BACKUP_DIR=/tmp/unifleet-test-backups` is run THEN the `unifleet_restore` database is created/populated and row counts match the source (verify with `psql`)
+- **psql to local DB works** — GIVEN the local stack is up WHEN `docker compose exec db psql -U unifleet unifleet -c "SELECT 1"` is run THEN output is "1"
+- **curl `/healthz` returns 200** — GIVEN the local stack is up WHEN `curl -I http://localhost:5000/healthz` is run THEN response status is 200
+
+##### Railway dashboard commands (run after #4)
+
+For each UI action documented in the runbook, verify the button / panel / URL exists where the runbook says it does.
+
+- **Project root URL is bookmarkable** — GIVEN the operator is logged into Railway WHEN they navigate to the runbook's documented URL THEN they see the `unifleet` project dashboard
+- **Web service deploys history is reachable** — GIVEN the operator is on the project dashboard WHEN they click into the `web` service → "Deploys" tab THEN they see a list of recent deploys
+- **Web service Variables tab is reachable** — GIVEN the operator is on the `web` service WHEN they click the "Variables" tab THEN they see the list of env vars
+- **Backup service last-run is visible** — GIVEN the operator is on the `backup` service WHEN they view the service dashboard THEN they see the "Last run" timestamp
+- **PG database metrics panel is reachable** — GIVEN the operator is on the `unifleet` database WHEN they view the "Metrics" tab THEN they see storage, connections, and CPU panels
+
+##### Smoke test routes (run against the live Railway URL, after #4)
+
+For each route in the runbook's "What 'healthy' looks like" section, hit it on the live Railway deployment.
+
+- **`/healthz` returns 200 on Railway** — GIVEN the service is deployed WHEN `curl -I https://<railway-app>.up.railway.app/healthz` is run THEN response status is 200
+- **`/form` renders** — GIVEN the service is deployed WHEN `curl -I https://<railway-app>.up.railway.app/form` is run THEN response status is 200
+- **`/api/ops/vouchers.json` returns data** — GIVEN the service is deployed WHEN `curl https://<railway-app>.up.railway.app/api/ops/vouchers.json` is run THEN response is valid JSON (not an HTML error page)
+- **`/assets/qr/<vid>.png` returns a PNG** — GIVEN at least one voucher exists WHEN `curl -I https://<railway-app>.up.railway.app/assets/qr/<vid>.png` is run THEN response status is 200 and Content-Type is `image/png`
+- **DNS resolves `unifleet.asia` post-cutover** — GIVEN the DNS cutover has been performed (F3, operator-owned) WHEN `dig unifleet.asia` is run THEN the answer includes the Railway IP. **Skip this scenario if F3 cutover hasn't happened yet.**
+
+### Implementation Notes
+
+- **Layer(s):** verification (not code)
+- **Pattern reference:** the 15-20 commands extracted from the runbook (the runbook IS the test file)
+- **Key decisions:** the verification is the RED → GREEN cycle for the runbook. Failing commands = fix the runbook OR fix the reality, your call.
+- **Two passes:** local pass runs now; Railway pass runs after #4. Both must pass before T3 is done.
+- **No pytest file is produced.** The "tests" are the commands; the "assertions" are the documented outputs; the "code under test" is the runbook.
+
+### Scope Boundaries
+
+- **Only implement:** the verification walk-through (no code changes)
+- **Do NOT add:** new tests in `tests/` — this task produces no new pytest files
+- **Do NOT modify:** any code files as part of this task. If a command fails, the runbook is updated (or the underlying reality is fixed in a separate task). T3 only updates `docs/runbook.md`.
+- **The Railway pass is blocked on #4.** Do not start the Railway pass until the operator has completed the Railway deployment. Local pass can start as soon as T2 is done.
+
+### Files Expected
+
+**New files:** None
+
+**Modified files:** `docs/runbook.md` (only IF a command is found to be wrong during the verification)
+
+**Must NOT modify:** `main.py`, `Makefile`, `scripts/` (these are out of scope; if they're wrong, that's a separate fix, not part of T3)
+
+---
+
+## Task T4: Verify env-var reference matches `main.py` + Railway Variables
+
+> **Status:** not started
+> **Effort:** s
+> **Priority:** high (the env-var reference is the operator's checklist for secret rotation; if it's wrong, the operator will rotate a var that doesn't exist or miss one that does)
+> **Depends on:** T2 AND **#4 (F1.1 T2 on-Railway)** — the Railway pass is blocked on the operator completing the Railway deployment
+
+### Description
+
+For each env var in the runbook's "Env var reference" table:
+1. **Local pass** (do now): grep `main.py` and other relevant files for reads of that env var. Verify the runbook's row accurately describes the purpose and the "required?" column (does the app refuse to boot without it?).
+2. **Railway pass** (do after #4): open the Variables dashboard for the web service. Verify the env var is actually set with the expected value. Verify the runbook's row matches what's there.
+
+If a mismatch is found, fix the runbook (or the code / Variables) and re-verify. RED → GREEN cycle until all env vars match.
+
+### Test Plan
+
+**This IS the test plan.** The "test file" is `docs/runbook.md` §12 (env-var reference table); the "test scenarios" are the env vars in that table; the "assertion" is "the env var is documented AND the code reads it AND (for Railway) it's set."
+
+#### Test Scenarios
+
+##### Local: env-var reads in code (run now)
+
+For each env var in the runbook's reference table, grep the codebase for reads. Pass = the runbook's row accurately describes the code's use of the var. Fail = fix the runbook (or fix the code, in a separate task).
+
+- **`DATABASE_URL` is read by `main.py` (or its imports)** — GIVEN the runbook says `DATABASE_URL` is read at startup WHEN `grep -rn "DATABASE_URL" --include="*.py" .` is run THEN at least one match appears in `main.py`, `db/pool.py`, or `db/postgres_repo.py`
+- **`secret_key` is read by `main.py`** — GIVEN the runbook says Flask's `secret_key` uses an env var WHEN `grep -n "secret_key" main.py` is run THEN at least one read is found
+- **`ADMIN_KEY` is read by `main.py`** — GIVEN the runbook says the admin routes check `ADMIN_KEY` WHEN `grep -n "ADMIN_KEY" main.py` is run THEN at least one read is found
+- **`SUPPLIER_API_TOKEN` is read by `main.py`** — GIVEN the runbook says the supplier API uses this token WHEN `grep -n "SUPPLIER_API_TOKEN" main.py` is run THEN at least one read is found
+- **`PERSISTENCE_BACKEND` is read by `main.py`** — GIVEN the runbook says this env var selects csv/db/pg WHEN `grep -n "PERSISTENCE_BACKEND" main.py` is run THEN at least one read is found (likely via `os.environ.get`)
+- **`UNIFLEET_DATA_DIR` is read by `data_paths.py`** — GIVEN the runbook says this env var controls file paths WHEN `grep -n "UNIFLEET_DATA_DIR" data_paths.py` is run THEN at least one read is found
+
+##### Local: env-var reads in scripts (run now)
+
+- **`DATABASE_URL` is read by `scripts/backup_postgres.py`** — GIVEN the runbook says the backup script uses `DATABASE_URL` WHEN `grep -n "DATABASE_URL" scripts/backup_postgres.py` is run THEN at least one read is found
+- **`UNIFLEET_BACKUP_DIR` is read by `scripts/backup_postgres.py`** — GIVEN the runbook says the backup script uses this env var WHEN `grep -n "UNIFLEET_BACKUP_DIR" scripts/backup_postgres.py` is run THEN at least one read is found
+- **`UNIFLEET_BACKUP_RETAIN_DAYS` is read by `scripts/backup_postgres.py`** — GIVEN the runbook says this env var controls retention WHEN `grep -n "UNIFLEET_BACKUP_RETAIN_DAYS" scripts/backup_postgres.py` is run THEN at least one read is found
+
+##### Railway: env-var presence in dashboard (run after #4)
+
+For each env var in the runbook's reference table, verify it's actually set in the Railway Variables dashboard for the web service.
+
+- **`DATABASE_URL` is set in Railway** — GIVEN the operator is on the web service Variables tab WHEN they search for `DATABASE_URL` THEN it appears in the list with a non-empty value
+- **`secret_key` is set in Railway** — GIVEN the operator is on the Variables tab WHEN they search for `secret_key` THEN it appears
+- **`ADMIN_KEY` is set in Railway** — GIVEN the operator is on the Variables tab WHEN they search for `ADMIN_KEY` THEN it appears
+- **`SUPPLIER_API_TOKEN` is set in Railway** — GIVEN the operator is on the Variables tab WHEN they search for `SUPPLIER_API_TOKEN` THEN it appears
+- **`PERSISTENCE_BACKEND` is set in Railway** — GIVEN the operator is on the Variables tab WHEN they search for `PERSISTENCE_BACKEND` THEN it appears (value should be `pg` or `postgres`)
+- **`UNIFLEET_DATA_DIR` is set in Railway** — GIVEN the operator is on the Variables tab WHEN they search for `UNIFLEET_DATA_DIR` THEN it appears with value `/data`
+- **`AWS_*` + `UNIFLEET_BACKUP_S3_BUCKET` are set IF S3 is configured** — GIVEN the operator has chosen S3 off-platform WHEN they search for these vars THEN they appear; otherwise the runbook should mark them as "optional, only if S3"
+
+##### Cross-check (run now): env vars in code BUT not in runbook = bug
+
+- **No env var is read in code but missing from the runbook** — GIVEN the runbook is supposed to be the complete list WHEN `grep -rEoh "os\.environ\.get\(['\"]([A-Z_]+)" --include="*.py" . | sort -u` is run THEN every result is in the runbook's reference table
+- **No env var is in the runbook but not read in code** — GIVEN the runbook's reference table WHEN each row is checked against the codebase THEN every var in the table is actually read somewhere (or documented as "reserved for future use")
+
+### Implementation Notes
+
+- **Layer(s):** verification (not code)
+- **Pattern reference:** the env vars extracted from the runbook + grep for `os.environ.get` patterns
+- **Key decisions:** the runbook's env-var reference is GROUND TRUTH — if there's a mismatch, the runbook must be updated to match the code (not the other way around), UNLESS the env var is genuinely unused and should be removed from the code.
+- **Two passes:** local pass runs now; Railway pass runs after #4. Both must pass before T4 is done.
+- **No pytest file is produced.** The "tests" are the env vars; the "assertions" are the documentation/code/dashboard match; the "code under test" is the runbook's env-var reference table.
+
+### Scope Boundaries
+
+- **Only implement:** the verification walk-through (no code changes)
+- **Do NOT add:** new tests in `tests/` — this task produces no new pytest files
+- **Do NOT modify:** any code files as part of this task. If code reads an undocumented env var, the runbook is updated. If the code shouldn't read it, that's a separate cleanup task.
+- **Do NOT remove:** env vars from the Railway Variables dashboard as part of this task (that's a separate ops action, and removing a var that's actually in use would break the service).
+- **The Railway pass is blocked on #4.** Do not start the Railway pass until the operator has completed the Railway deployment. Local pass can start as soon as T2 is done.
+
+### Files Expected
+
+**New files:** None
+
+**Modified files:** `docs/runbook.md` (only IF a mismatch is found during the verification — most likely fix is adding a missing env var to the table)
+
+**Must NOT modify:** `main.py`, `scripts/`, Railway Variables (these are out of scope; if they're wrong, that's a separate fix)
+
