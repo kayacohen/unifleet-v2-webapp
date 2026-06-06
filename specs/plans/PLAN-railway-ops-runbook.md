@@ -522,7 +522,7 @@ For each route in the runbook's "What 'healthy' looks like" section, hit it on t
 
 ## Task T4: Verify env-var reference matches `main.py` + Railway Variables
 
-> **Status:** not started
+> **Status:** in progress (local pass done; Railway pass blocked on #4)
 > **Effort:** s
 > **Priority:** high (the env-var reference is the operator's checklist for secret rotation; if it's wrong, the operator will rotate a var that doesn't exist or miss one that does)
 > **Depends on:** T2 AND **#4 (F1.1 T2 on-Railway)** — the Railway pass is blocked on the operator completing the Railway deployment

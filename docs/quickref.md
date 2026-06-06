@@ -22,7 +22,7 @@
 |---|---|---|
 | `DATABASE_URL` | Railway → `web` service → Variables tab | Postgres connection string (managed DB `unifleet`) |
 | `PERSISTENCE_BACKEND` | Railway → `web` service → Variables tab | Selects `csv` / `db` / `pg` (must be `pg` in production) |
-| `secret_key` | Railway → `web` service → Variables tab | Flask session signing key; rotating it logs everyone out |
+| `secret_key` | **HARDCODED in `main.py:102`** ⚠️ | Flask session signing key; rotation requires a source edit + redeploy, NOT a Variables-tab change |
 | `ADMIN_KEY` | Railway → `web` service → Variables tab | Auth token for `/admin/*` routes |
 | `SUPPLIER_API_TOKEN` | Railway → `web` service → Variables tab | Auth token for the supplier API endpoint |
 

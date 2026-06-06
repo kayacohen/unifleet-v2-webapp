@@ -259,9 +259,11 @@ Rotate secrets **one at a time** with a smoke test after each. If something brea
 | `ADMIN_KEY` | Auth token for `/admin/*` | **Admin access breaks until all admin clients are updated** | 3rd (high impact) | Hit `/admin/prices` with the new `ADMIN_KEY`; expect 200 |
 | `SUPPLIER_API_TOKEN` | Auth token for supplier API | **Supplier integration breaks until the supplier is told the new value** | 4th (third-party dependency) | Hit `/supplier-sheet.pdf?token=<new>`; expect 200 + valid PDF |
 
+> ⚠️ **`secret_key` is currently HARDCODED in `main.py:102` (value: `'your_secret_key_here'`)** — see [§12](#env-var-reference) for the row annotation. The standard rotation procedure below (edit Variable, redeploy) does NOT work for `secret_key`. The special procedure is at the end of this section.
+
 **The one-at-a-time rule:** if you rotate 3 secrets and the smoke test fails, you don't know which rotation caused it. Rotate one, smoke test, commit (no, the rotation is in Railway Variables, not in git), then rotate the next.
 
-**Steps for a single rotation:**
+**Steps for a single rotation (Railway Variable):**
 
 1. Open Railway dashboard → `web` service → Variables tab.
 2. Edit the variable. Paste the new value. Save.
@@ -269,6 +271,15 @@ Rotate secrets **one at a time** with a smoke test after each. If something brea
 4. Wait for "Active" status.
 5. Run the smoke test for that variable (column 5 of the table above).
 6. If green: rotation is done. If red: revert to the old value, redeploy, investigate.
+
+**Steps for `secret_key` rotation (source-code edit, special):**
+
+1. Edit `main.py:102` locally: `app.secret_key = 'your_new_random_value_here'`.
+2. Generate the new value with `python -c "import secrets; print(secrets.token_urlsafe(32))"`.
+3. Commit the change: `git commit -am "chore(security): rotate secret_key"`.
+4. Push to `main` → Railway auto-deploys.
+5. Wait for "Active" status. **All active sessions are now invalid** (Flask's `itsdangerous` will reject session cookies signed with the old key).
+6. Run the smoke test: `/form` still renders; create a fresh session, log in, verify it works.
 
 **Ordering rationale:** `DATABASE_URL` and `PERSISTENCE_BACKEND` have no user-visible impact — start with those so you can warm up. `secret_key` and `ADMIN_KEY` have customer/admin impact — do them when you can take a brief disruption. `SUPPLIER_API_TOKEN` is third-party — schedule with the supplier's team in advance.
 
@@ -475,35 +486,47 @@ Verify a backup is good by restoring it into a throwaway DB and checking row cou
 
 ## 12. Env var reference
 
-The complete list of env vars read by the app and the backup script. **Required** means the app refuses to boot without it.
+The complete list of env vars read by the app and the backup script. **Required** means the app will fail at first request if missing — it does **not** mean the app refuses to boot (there is no boot-time gate; see [§13](#why-this-runbook-doesnt-have-x) for the missing F3.1 hardening). If a var has a default in the code, the default is shown.
 
 ### Web service (`web`)
 
-| Name | Purpose | Required? | Example (dev) | Where to set | Last rotated |
-|---|---|---|---|---|---|
-| `DATABASE_URL` | Postgres connection string | **Yes** (when `PERSISTENCE_BACKEND=pg`) | `postgresql://unifleet:unifleet_dev_pw@db:5432/unifleet` | Railway → `web` → Variables | — |
-| `PERSISTENCE_BACKEND` | Selects csv / db / pg | **Yes** (in production) | `pg` (or `postgres`) | Railway → `web` → Variables | — |
-| `secret_key` | Flask session signing | **Yes** | (random 32+ char string) | Railway → `web` → Variables | — |
-| `ADMIN_KEY` | Auth token for `/admin/*` | **Yes** | (random 32+ char string) | Railway → `web` → Variables | — |
-| `SUPPLIER_API_TOKEN` | Auth token for supplier API | **Yes** | (random 32+ char string) | Railway → `web` → Variables | — |
-| `UNIFLEET_DATA_DIR` | Root for generated assets | **Yes** (in production) | `/data` | Railway → `web` → Variables | — |
+| Name | Purpose | Required? | Default | Example (dev) | Where to set | Last rotated |
+|---|---|---|---|---|---|---|
+| `DATABASE_URL` | Postgres connection string (primary) | **Yes** (when `PERSISTENCE_BACKEND=pg`) | none — errors if missing | `postgresql://unifleet:unifleet_dev_pw@db:5432/unifleet` | Railway → `web` → Variables | — |
+| `UNIFLEET_DB_DSN` | Postgres connection string (fallback to `DATABASE_URL`) | No (use `DATABASE_URL`) | none | (same as `DATABASE_URL`) | Railway → `web` → Variables | — |
+| `PERSISTENCE_BACKEND` | Selects csv / db / pg | **Yes** (in production) | `csv` | `pg` (or `postgres`) | Railway → `web` → Variables | — |
+| `secret_key` | Flask session signing | **HARDCODED** ⚠️ | `'your_secret_key_here'` literal in `main.py:102` | n/a — set in code | **n/a** — rotate by editing `main.py:102` and redeploying. Setting it in Railway Variables has no effect. | — |
+| `ADMIN_KEY` | Auth token for `/admin/*` | **Yes** | `unifleet-admin` | (random 32+ char string) | Railway → `web` → Variables | — |
+| `SUPPLIER_API_TOKEN` | Auth token for supplier API | **Yes** | `unifleet2025mvp` | (random 32+ char string) | Railway → `web` → Variables | — |
+| `UNIFLEET_DATA_DIR` | Root for generated assets | **Yes** (in production) | `/data` | `/data` | Railway → `web` → Variables | — |
+| `BASE_URL` | Base URL embedded in generated voucher images + supplier links | No | `http://localhost:5000` | `https://unifleet.asia` (in production) | Railway → `web` → Variables | — |
+| `ENFORCE_PHASES` | Server-side enforcement of voucher phase ordering | No | `""` (disabled) | `1` to enable | Railway → `web` → Variables | — |
+| `OPS_TOKEN` | Auth token for `/ops/...` routes | No | `""` (ops routes disabled) | (random string) | Railway → `web` → Variables | — |
 
 ### Backup service (`backup`)
 
-| Name | Purpose | Required? | Example (dev) | Where to set | Last rotated |
-|---|---|---|---|---|---|
-| `DATABASE_URL` | Postgres connection string (for `pg_dump`) | **Yes** | (same as `web`'s) | Railway → `backup` → Variables | — |
-| `UNIFLEET_BACKUP_DIR` | Where to write `.pgdump` files | No (default `/backups`) | `/tmp` (for local test) | Railway → `backup` → Variables | — |
-| `UNIFLEET_BACKUP_RETAIN_DAYS` | Rotation threshold | No (default `14`) | `30` | Railway → `backup` → Variables | — |
-| `UNIFLEET_BACKUP_S3_BUCKET` | S3 off-platform upload (optional) | No | (bucket name) | Railway → `backup` → Variables | — |
-| `UNIFLEET_BACKUP_S3_PREFIX` | S3 key prefix (optional) | No | `unifleet/` | Railway → `backup` → Variables | — |
-| `UNIFLEET_BACKUP_S3_STORAGE_CLASS` | S3 storage class (optional) | No (default `STANDARD_IA`) | `GLACIER_IR` | Railway → `backup` → Variables | — |
-| `AWS_ACCESS_KEY_ID` | AWS creds for S3 (optional) | No (required only if S3 is used) | (AWS access key) | Railway → `backup` → Variables | — |
-| `AWS_SECRET_ACCESS_KEY` | AWS secret for S3 (optional) | No (required only if S3 is used) | (AWS secret) | Railway → `backup` → Variables | — |
+| Name | Purpose | Required? | Default | Example (dev) | Where to set | Last rotated |
+|---|---|---|---|---|---|---|
+| `DATABASE_URL` | Postgres connection string (for `pg_dump`) | **Yes** | none | (same as `web`'s) | Railway → `backup` → Variables | — |
+| `UNIFLEET_BACKUP_DIR` | Where to write `.pgdump` files | No | `/backups` | `/tmp` (for local test) | Railway → `backup` → Variables | — |
+| `UNIFLEET_BACKUP_RETAIN_DAYS` | Rotation threshold | No | `14` | `30` | Railway → `backup` → Variables | — |
+| `UNIFLEET_BACKUP_S3_BUCKET` | S3 off-platform upload (optional) | No | `""` (no S3) | (bucket name) | Railway → `backup` → Variables | — |
+| `UNIFLEET_BACKUP_S3_PREFIX` | S3 key prefix (optional) | No | `unifleet/` | `unifleet/` | Railway → `backup` → Variables | — |
+| `UNIFLEET_BACKUP_S3_STORAGE_CLASS` | S3 storage class (optional) | No | `STANDARD_IA` | `GLACIER_IR` | Railway → `backup` → Variables | — |
+| `AWS_ACCESS_KEY_ID` | AWS creds for S3 (read implicitly by boto3) | No (required only if S3 is used) | none | (AWS access key) | Railway → `backup` → Variables | — |
+| `AWS_SECRET_ACCESS_KEY` | AWS secret for S3 (read implicitly by boto3) | No (required only if S3 is used) | none | (AWS secret) | Railway → `backup` → Variables | — |
 
 ### Cross-check: env vars in code but not in this table
 
-If a code change adds a new `os.environ.get(...)` call, **add the env var to this table in the same PR.** Verification is in [§T4 of the plan](#) (T4 walks this table against the codebase).
+If a code change adds a new `os.environ.get(...)` call, **add the env var to this table in the same PR.** The verification walk for this table is **T4 in `specs/plans/PLAN-railway-ops-runbook.md`** — it greps the codebase for env-var reads and compares to this table. The last T4 walk (commit after T1+T2) found 5 mismatches which were fixed in this section:
+
+1. **`secret_key` was listed as an env var but is actually hardcoded** in `main.py:102`. The row is now marked **HARDCODED** with a warning; the "Where to set" column says `n/a` to make the operator's mental model accurate.
+2. **`UNIFLEET_DB_DSN`** is read by `db/pool.py:47` and `db/postgres_repo.py:135` as a fallback to `DATABASE_URL`; now listed.
+3. **`BASE_URL`** is read by `generate_voucher.py:31`; now listed.
+4. **`ENFORCE_PHASES`** is read by `main.py:119`; now listed.
+5. **`OPS_TOKEN`** is read by `main.py:120`; now listed.
+
+**If you add a new env var to the code:** update this table in the same commit. The next T4 walk will catch it.
 
 ---
 
