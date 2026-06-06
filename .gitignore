@@ -181,6 +181,7 @@ data/station_prices.json
 
 # Local DBs
 data/*.db
+data/legacy/*.db
 
 # Allowlist (keep these versioned)
 !data/stations.csv
