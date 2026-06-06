@@ -106,6 +106,27 @@ and F4 docs/monitoring phase can begin.
     clear error, idempotent re-run, 107/107 unit tests
     still pass
 
+- ✅ **F4 plan drafted** (`specs/plans/PLAN-railway-ops-runbook.md`,
+  341 lines, NEW in working tree, NOT YET COMMITTED):
+  - Two new docs in the repo: `docs/quickref.md` (~80 lines,
+    table-only cheatsheet) + `docs/runbook.md` (~500 lines,
+    12 structured sections covering Topology / Dashboard
+    bookmarks / Deploy procedure / What "healthy" looks like /
+    Monitoring / Rollback / DB restore / Secret rotation /
+    Local dev setup / On-call runbook / Backup verification /
+    Env var reference)
+  - Tailored for the operator's manual-dashboard-deploy
+    workflow (no CLI, no special branch, no CI this round)
+  - Includes 12 explicit decisions, 10 edge cases + failure
+    modes, and 3 open questions captured as follow-ups
+    (Sentry/error tracking, Slack/email alerts, CI/CD)
+  - Plus 1-line README link addition (not a README rewrite)
+  - Plus 2 verification tasks: walk through every command in
+    the runbook against the local Docker stack; walk through
+    the env-var reference against `main.py`
+  - Tasks not yet generated — next step is `generate-tasks`
+    from the plan, then `tdd` to implement
+
 ## Open items, prioritized
 
 | # | Item | Why now | Effort |
@@ -114,22 +135,60 @@ and F4 docs/monitoring phase can begin.
 | ~~2~~ | ~~Merge `feature/F2.5` → `main`~~ | Done — see Completed above. | — |
 | ~~3~~ | ~~`scripts/restore_csv_data.py` plan doc~~ | Done — see Completed above. | — |
 | ~~5~~ | ~~Volume backup strategy~~ | Done — see Completed above. | — |
-| 4 | **F1.1 T2 on-Railway** | The actual deployment. Unblocks F3. Still blocked on `railway login` (operator action). Once done: run `provision_railway.sh`, then `run_f1_1_verifications.sh`, verify PG + service + volume. Also: provision the `backup` service from the new `Dockerfile.backup` + a 2nd `unifleet-pgdata-backups` volume. | 1–2 hours (mostly waiting) |
+| 4 | **F1.1 T2 on-Railway** | The actual deployment. Unblocks everything else. Still blocked on `railway login` (operator action). Once done: run `provision_railway.sh`, then `run_f1_1_verifications.sh`, verify PG + service + volume. Also: provision the `backup` service from the new `Dockerfile.backup` + a 2nd `unifleet-pgdata-backups` volume. | 1–2 hours (mostly waiting) |
 
-After this, the original 4-phase plan still has:
+## F3 (cutover) — operator-owned, terminated as a planned deliverable
 
-- **F3 — Production cutover** (point unifleet.asia at the new PG-backed
-  web service, smoke-test on Railway, swap DNS)
-- **F4 — Docs + monitoring + alerts** (README updates, PERSISTENCE_BACKEND
-  selector guide, error tracking, uptime checks, on-call runbook,
-  backup monitoring)
+The user has explicitly terminated the F3 cutover as a planned
+deliverable from this session. The cutover (Replit → Railway, DNS
+swap, smoke test, Replit decommission) will be performed manually
+by the operator. No plan artifact for F3. The work is tracked only
+in the user's head + the ANCHOR's "operator-owned" entry.
+
+Original F3 features (F3.1-F3.7 in `PROJECT-migrate-to-railway.md`)
+were ALSO terminated — production-readiness hardening (mandatory
+env-driven secrets, CSRF, structured logging, phase ordering,
+dedupe helpers, /discount-locator resolution) is **permanently
+skipped** per the user's decision. The Railway ops runbook
+acknowledges this in a "Why this runbook doesn't have X" section.
+
+## F4 (docs + monitoring) — plan done, tasks not yet generated
+
+- ✅ **`specs/plans/PLAN-railway-ops-runbook.md`** (341 lines, NEW
+  in working tree, NOT YET COMMITTED): operator runbook + quickref
+  for the manual Railway deployment. Two new docs in the repo:
+  - `docs/quickref.md` (~80 lines, table-only cheatsheet)
+  - `docs/runbook.md` (~500 lines, 12 structured sections: Topology,
+    Dashboard bookmarks, Deploy procedure, What "healthy" looks
+    like, Monitoring, Rollback, DB restore, Secret rotation, Local
+    dev setup, On-call runbook, Backup verification, Env var
+    reference)
+  - Plus a 1-line README link addition (not a README rewrite)
+  - Plus 2 verification tasks: walk through every command in
+    the runbook against the local Docker stack; walk through
+    the env-var reference against `main.py`
+- **Next step**: review the plan; then `generate-tasks` from it
+  to produce the TDD-ready task specs; then `tdd` to implement.
 
 ## Recommended order
 
-1. **#4 F1.1 T2 on-Railway** — the actual deployment; unblocks F3.
-   Requires `railway login` (operator action). Includes provisioning
-   the `backup` Cron Schedule service with the new `Dockerfile.backup`
-   + a `unifleet-pgdata-backups` Volume + `DATABASE_URL` env var.
+1. **Review + commit `PLAN-railway-ops-runbook.md`** (so it's
+   pushed and survives the session boundary).
+2. **#4 F1.1 T2 on-Railway** — the actual deployment; unblocks
+   F3. Requires `railway login` (operator action). Includes
+   provisioning the `backup` Cron Schedule service with the new
+   `Dockerfile.backup` + a `unifleet-pgdata-backups` Volume +
+   `DATABASE_URL` env var.
+3. **F3 (cutover) — operator-owned**: the operator runs the
+   cutover using the runbook as their playbook. No automated
+   work, no PRs from this session.
+4. **F4 (docs + monitoring) — task generation + TDD**: review
+   the plan, generate tasks from it, implement the docs,
+   verify, commit. ~6 tasks, ~1-2 hours.
+5. **Future follow-ups** (open questions in the plan): Sentry
+   or similar for error tracking; Slack/email alerts; CI/CD
+   pipeline; geo-redundancy for backups; per-env (staging/prod)
+   distinction.
 
 ## Side observations (not yet scoped)
 
