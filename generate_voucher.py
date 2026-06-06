@@ -113,6 +113,19 @@ def generate_branded_image(voucher_data):
         print(f"⚠️ Template not found: {template_path}")
         return
 
+    def _fmt(v):
+        """Render a value as a drawable string.
+
+        PG-backed rows may have datetime objects for date columns; CSV-backed
+        rows may have str/None. Normalize to a str so Pillow's draw.text
+        (which iterates the str) doesn't blow up on a datetime.
+        """
+        if v is None:
+            return ''
+        if isinstance(v, datetime):
+            return v.strftime("%Y-%m-%d")
+        return str(v)
+
     try:
         base = Image.open(template_path).convert("RGB")
         qr = Image.open(qr_path).resize((750, 750))
@@ -134,11 +147,11 @@ def generate_branded_image(voucher_data):
         spacing = 70
 
         entries = [
-            ("PHP Value:", f"₱{voucher_data.get('total_dispensed', '')} (Includes ₱{voucher_data.get('requested_amount_php', '')} Prepaid + ₱{voucher_data.get('discount_total', '')} FREE)"),
-            ("Driver Name:", voucher_data.get('driver_name', '')),
-            ("Plate:", voucher_data.get('vehicle_plate', '')),
-            ("Station:", voucher_data.get('station', '')),
-            ("Valid Date:", voucher_data.get('expected_refill_date', '')),
+            ("PHP Value:", f"₱{_fmt(voucher_data.get('total_dispensed'))} (Includes ₱{_fmt(voucher_data.get('requested_amount_php'))} Prepaid + ₱{_fmt(voucher_data.get('discount_total'))} FREE)"),
+            ("Driver Name:", _fmt(voucher_data.get('driver_name'))),
+            ("Plate:", _fmt(voucher_data.get('vehicle_plate'))),
+            ("Station:", _fmt(voucher_data.get('station'))),
+            ("Valid Date:", _fmt(voucher_data.get('expected_refill_date'))),
             ("Voucher ID:", voucher_id)
         ]
 

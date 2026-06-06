@@ -42,6 +42,20 @@ _VOUCHER_INSERT_COLUMNS = VOUCHER_COLUMNS + list(_FK_COLUMNS)
 # in code makes the auto-bump behavior on UPSERT cleaner.)
 _AUTO_TIMESTAMP_COLUMNS = ("created_at", "updated_at")
 
+# All voucher columns whose PG type is TIMESTAMPTZ. The repo must
+# normalize epoch-int (price_store back-compat) / ISO-string (form input)
+# / datetime (PostgresRepo internals) into a tz-aware datetime before
+# INSERT, otherwise psycopg sends the raw value and PG rejects the
+# implicit cast.
+_TIMESTAMPTZ_COLUMNS = frozenset({
+    "transaction_date",
+    "expected_refill_date",
+    "redemption_timestamp",
+    "price_snapshot_updated_at",
+    "discount_snapshot_captured_at",
+    "computed_at",
+})
+
 
 def _nullable(v):
     """Convert empty string to None (CSV-world → Postgres convention)."""
@@ -55,6 +69,50 @@ def _now_or(v):
     if v is None or v == "":
         return datetime.now(timezone.utc)
     return v
+
+
+def _to_timestamptz(v):
+    """Normalize any reasonable input to a tz-aware UTC datetime.
+
+    Accepts:
+      - None / ""  → None
+      - datetime   → tz-aware UTC (adds UTC if naive)
+      - int / float → epoch seconds → UTC datetime
+      - str         → ISO-ish (with/without 'T', with/without tz, with
+                      or without microseconds). Naive strings are
+                      assumed UTC. Unparseable → None.
+    """
+    if v is None or v == "":
+        return None
+    if isinstance(v, datetime):
+        return v if v.tzinfo else v.replace(tzinfo=timezone.utc)
+    if isinstance(v, (int, float)):
+        try:
+            return datetime.fromtimestamp(float(v), tz=timezone.utc)
+        except (OverflowError, OSError, ValueError):
+            return None
+    if isinstance(v, str):
+        s = v.strip()
+        if not s:
+            return None
+        # Try a few common formats, then fromisoformat as a fallback
+        for fmt in (
+            "%Y-%m-%dT%H:%M:%S.%f",
+            "%Y-%m-%dT%H:%M:%S",
+            "%Y-%m-%dT%H:%M",
+            "%Y-%m-%d %H:%M:%S",
+            "%Y-%m-%d %H:%M",
+        ):
+            try:
+                return datetime.strptime(s, fmt).replace(tzinfo=timezone.utc)
+            except ValueError:
+                continue
+        try:
+            dt = datetime.fromisoformat(s)
+        except ValueError:
+            return None
+        return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+    return None
 
 
 def _gen_voucher_id() -> str:
@@ -202,6 +260,7 @@ class PostgresRepo:
                 for row in rows:
                     vals = [
                         _now_or(row.get(c)) if c in _AUTO_TIMESTAMP_COLUMNS
+                        else _to_timestamptz(row.get(c)) if c in _TIMESTAMPTZ_COLUMNS
                         else _nullable(row.get(c))
                         for c in cols
                     ]
