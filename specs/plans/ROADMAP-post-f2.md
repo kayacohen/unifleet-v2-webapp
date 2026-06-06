@@ -77,6 +77,35 @@ and F4 docs/monitoring phase can begin.
     + `.gitignore` entry for `data/legacy/*.db` resolves it
     (file stays on disk for rollback)
 
+- ✅ **#5 Volume backup strategy** (commits `e05b82c` + `068a04d`)
+  - New `specs/plans/PLAN-pg-backup.md` (249 lines): the
+    threat model, the `pg_dump --format=custom` choice, the
+    Railway Cron Schedule service design, the 6-step restore
+    procedure, RTO<30min / RPO<24h targets, the optional S3
+    off-platform copy, the 4 things explicitly out of scope
+    (PITR, encryption config, verification cron, alerting)
+  - New `scripts/backup_postgres.py` (~180 lines): orchestrates
+    pg_dump, rotation, optional S3 upload. Stdlib only
+    (boto3 is optional; skipped gracefully if missing).
+    Handles DSN redaction in logs, `--dry-run`, and cleans
+    up the 0-byte placeholder pg_dump leaves on failure
+  - New `Dockerfile.backup` (~30 lines): production image
+    (postgres:16-alpine + python3 + boto3 + script as
+    ENTRYPOINT). 359 MB. Used by Railway Cron Schedule
+    service in F1.1 T2 (#4)
+  - Modified `Makefile` (+49 lines): 4 new targets —
+    `make backup`, `make restore-list`, `make restore-pg`,
+    `make backup-clean`. All accept `BACKUP_DIR=...`
+    override (data/legacy/ is root-owned in this dev env)
+  - Smoke-tested end-to-end against local `unifleet-db`:
+    23 KB pg_dump (55 TOC entries, gzip-compressed),
+    `pg_restore` round-trip into `unifleet_restore` DB
+    passes row-count check (19/10/9/3/49 = source),
+    rotation deletes 3 files mtime'd to 30 days ago,
+    bad DSN leaves no 0-byte file, missing pg_dump gives
+    clear error, idempotent re-run, 107/107 unit tests
+    still pass
+
 ## Open items, prioritized
 
 | # | Item | Why now | Effort |
@@ -84,22 +113,23 @@ and F4 docs/monitoring phase can begin.
 | ~~1~~ | ~~End-to-end write-path test on PG~~ | Done — see Completed above. | — |
 | ~~2~~ | ~~Merge `feature/F2.5` → `main`~~ | Done — see Completed above. | — |
 | ~~3~~ | ~~`scripts/restore_csv_data.py` plan doc~~ | Done — see Completed above. | — |
-| 4 | **F1.1 T2 on-Railway** | Actual deployment. Unblocks F3. Still blocked on `railway login` (operator action). Once done: run `provision_railway.sh`, then `run_f1_1_verifications.sh`, verify PG + service + volume. | 1–2 hours (mostly waiting) |
-| 5 | **Volume backup strategy** | `unifleet-pgdata` is the only copy of the live DB. If Railway loses the volume, all customers / vouchers / audit are gone. Need a nightly `pg_dump` to a backup Volume (or Railway's built-in Volume snapshots). | 2–3 hours (decide + implement + test restore) |
+| ~~5~~ | ~~Volume backup strategy~~ | Done — see Completed above. | — |
+| 4 | **F1.1 T2 on-Railway** | The actual deployment. Unblocks F3. Still blocked on `railway login` (operator action). Once done: run `provision_railway.sh`, then `run_f1_1_verifications.sh`, verify PG + service + volume. Also: provision the `backup` service from the new `Dockerfile.backup` + a 2nd `unifleet-pgdata-backups` volume. | 1–2 hours (mostly waiting) |
 
-After these, the original 4-phase plan still has:
+After this, the original 4-phase plan still has:
 
 - **F3 — Production cutover** (point unifleet.asia at the new PG-backed
   web service, smoke-test on Railway, swap DNS)
 - **F4 — Docs + monitoring + alerts** (README updates, PERSISTENCE_BACKEND
-  selector guide, error tracking, uptime checks, on-call runbook)
+  selector guide, error tracking, uptime checks, on-call runbook,
+  backup monitoring)
 
 ## Recommended order
 
 1. **#4 F1.1 T2 on-Railway** — the actual deployment; unblocks F3.
-   Requires `railway login` (operator action).
-2. **#5 volume backup** — must be in place before F3 cutover. Losing
-   the only DB copy post-cutover would be catastrophic.
+   Requires `railway login` (operator action). Includes provisioning
+   the `backup` Cron Schedule service with the new `Dockerfile.backup`
+   + a `unifleet-pgdata-backups` Volume + `DATABASE_URL` env var.
 
 ## Side observations (not yet scoped)
 
