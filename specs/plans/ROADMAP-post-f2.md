@@ -53,12 +53,22 @@ and F4 docs/monitoring phase can begin.
     3 vouchers / 49 audit_log rows.
   - 107/107 unit tests still pass after the fix.
 
+- ✅ **#2 Merge `feature/F2.5` → `main`** (fast-forward, 9 commits)
+  - `main` advanced from `c45a461` (F2.3 T1) → `66c2cc7`
+    (write-path fixes / roadmap)
+  - 19 files changed, +2077 / -67 lines
+  - New files on main: `data_paths.py`, `audit_log.py`,
+    `scripts/migrate_to_postgres.py`, `scripts/restore_csv_data.py`,
+    `tests/test_data_paths.py`, all 4 `specs/plans/PLAN-*.md` +
+    `ROADMAP-post-f2.md`
+  - Pushed to origin: `c45a461..66c2cc7  main -> main`
+
 ## Open items, prioritized
 
 | # | Item | Why now | Effort |
 |---|---|---|---|
 | ~~1~~ | ~~End-to-end write-path test on PG~~ | Done — see Completed above. | — |
-| 2 | **Merge `feature/F2.5` → `main`** | 8 commits on a side branch. Future work can't reference F2.6 / CSV-restore / F2.4 / write-path-fix work without this. | 1 min (just a PR/merge) |
+| ~~2~~ | ~~Merge `feature/F2.5` → `main`~~ | Done — see Completed above. | — |
 | 3 | **`scripts/restore_csv_data.py` plan doc** | Tool is committed but only documented in the commit message. Future operator picking it up cold won't know the orphan-handling rules, BOM quirks, or why the deterministic voucher id exists. Should be `specs/plans/PLAN-csv-restore.md`. | 20 min |
 | 4 | **F1.1 T2 on-Railway** | Actual deployment. Unblocks F3. Still blocked on `railway login` (operator action). Once done: run `provision_railway.sh`, then `run_f1_1_verifications.sh`, verify PG + service + volume. | 1–2 hours (mostly waiting) |
 | 5 | **Volume backup strategy** | `unifleet-pgdata` is the only copy of the live DB. If Railway loses the volume, all customers / vouchers / audit are gone. Need a nightly `pg_dump` to a backup Volume (or Railway's built-in Volume snapshots). | 2–3 hours (decide + implement + test restore) |
@@ -72,12 +82,11 @@ After these, the original 4-phase plan still has:
 
 ## Recommended order
 
-1. **#2 merge to main** — unblocks future work to be on `main`.
-2. **#3 plan doc for the restore tool** — quick write-up, captures
+1. **#3 plan doc for the restore tool** — quick write-up, captures
    decisions that are currently only in the commit message.
-3. **#4 F1.1 T2 on-Railway** — the actual deployment; unblocks F3.
+2. **#4 F1.1 T2 on-Railway** — the actual deployment; unblocks F3.
    Requires `railway login` (operator action).
-4. **#5 volume backup** — must be in place before F3 cutover. Losing
+3. **#5 volume backup** — must be in place before F3 cutover. Losing
    the only DB copy post-cutover would be catastrophic.
 
 ## Side observations (not yet scoped)
