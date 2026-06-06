@@ -448,7 +448,7 @@ Create the canonical operator manual. ~500-700 lines, 12 sections, with cross-re
 
 ## Task T3: Verify every command in `docs/runbook.md` works (local + Railway)
 
-> **Status:** in progress (local pass)
+> **Status:** in progress (local pass done; Railway pass blocked on #4)
 > **Effort:** s
 > **Priority:** high (the runbook is useless if its commands don't work)
 > **Depends on:** T2 AND **#4 (F1.1 T2 on-Railway)** — the Railway pass is blocked on the operator completing the Railway deployment
