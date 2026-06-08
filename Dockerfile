@@ -32,4 +32,4 @@ EXPOSE 5000
 # HEALTHCHECK --interval=10s --timeout=3s --start-period=20s --retries=5 \
 #   CMD sh -c "python -c \"import urllib.request, os; urllib.request.urlopen(f'http://localhost:{os.environ.get(\\\"PORT\\\", \\\"5000\\\")}/healthz').read()\"" || exit 1
 
-CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:${PORT:-5000} --workers 1 main:app"]
+CMD ["sh", "-c", "python db/apply.py db/schema.sql db/seed_stations.sql db/seed_prices.sql && gunicorn --bind 0.0.0.0:${PORT:-5000} --workers 1 main:app"]

@@ -2,7 +2,8 @@
 command = "poetry install --no-dev --no-interaction"
 
 [deploy]
-startCommand = "sh -c "gunicorn --bind 0.0.0.0:$PORT --workers 1 main:app"
+preDeployCommand = "python db/apply.py db/schema.sql db/seed_stations.sql db/seed_prices.sql"
+startCommand = 'sh -c "gunicorn --bind 0.0.0.0:$PORT --workers 1 main:app"'
 
 [nix]
 packages = ["freetype", "glibcLocales"]

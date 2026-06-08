@@ -8,7 +8,7 @@ import tomllib
 from pathlib import Path
 
 
-RAILWAY_TOML = Path(__file__).resolve().parent.parent / "railway.toml"
+RAILWAY_TOML = Path(__file__).resolve().parent.parent / "rw.txt"
 
 
 def _load():
